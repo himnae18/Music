@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>유튜브 영상 3P</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body data-store="yt3pVideos">
+<button id="hamburgerBtn" class="hamburger" type="button">☰</button>
+<div id="drawerOverlay" class="drawer-overlay"></div>
+<nav id="drawer" class="drawer" aria-label="메뉴"></nav>
+
+<button id="lyricsBtn" class="lyrics-toggle" title="메모 패널" type="button">≡</button>
+
+<div id="mainContent">
+  <h1>📺 유튜브 영상 3P</h1>
+  <section id="tagTools" class="tag-tools" aria-label="태그 입력"></section>
+
+  <div class="music-page-layout">
+    <aside class="left-library-panel" aria-label="영상 추가와 재생목록">
+      <section class="add-song-section" aria-label="영상 추가">
+        <h2>🎬 영상 추가</h2>
+        <div class="add-song-row">
+          <input id="yt" placeholder="유튜브 링크" />
+          <button class="add-song-btn" type="button" onclick="addSong()">추가</button>
+        </div>
+      </section>
+
+      <hr id="topDivider" />
+      <div id="list"></div>
+    </aside>
+
+    <section class="center-player-panel" aria-label="유튜브 플레이어">
+      <div class="player-wrap">
+        <div id="player"></div>
+      </div>
+
+      <div class="controls">
+        <button id="btnSeq" type="button">순서대로</button>
+        <button id="btnRandOne" type="button">랜덤곡</button>
+        <button id="btnRand10" type="button">랜덤곡 10회</button>
+        <button id="btnRandAuto" type="button">랜덤자동재생</button>
+        <button id="btnLoop5" type="button">5회반복</button>
+        <button id="btnLoop10" type="button">10회반복</button>
+        <button id="btnLoopInf" type="button">무한반복</button>
+        <button id="btnEdit" type="button">수정</button>
+        <button id="btnDelete" type="button">삭제</button>
+        <button id="btnDownload" type="button">링크</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<aside id="lyricsDrawer" class="lyrics-drawer">
+  <div class="lyrics-head">
+    <div class="lyrics-head-title">메모</div>
+    <button id="lyricsCloseBtn" class="lyrics-close" type="button">✕</button>
+  </div>
+
+  <div class="lyrics-tabs">
+    <button id="tabLyrics" class="tab-link tab-active" type="button">설명</button>
+    <button id="tabMr" class="tab-link tab-disabled" type="button">메모</button>
+    <a id="tabScore" class="tab-link tab-disabled" href="#" target="_blank" rel="noopener">자료</a>
+  </div>
+
+  <div id="lyricsNowTitle" class="lyrics-now-title">재생중인 영상이 없어</div>
+  <div id="lyricsNowTags" class="lyrics-now-tags"></div>
+  <div class="lyrics-body">
+    <pre id="lyricsNowText">영상을 재생하면 여기서 설명/메모를 볼 수 있어.</pre>
+    <div id="lyricsNowMedia" class="lyrics-media" style="display:none;"></div>
+  </div>
+</aside>
+<div id="lyricsOverlay" class="lyrics-overlay"></div>
+
+<div id="editModal" class="modal-overlay">
+  <div class="modal-box" onclick="event.stopPropagation();">
+    <div id="editModalContent"></div>
+  </div>
+</div>
+
+<script src="../js/app-state.js"></script>
+<script src="../nav.js"></script>
+<script src="../js/app-ui.js"></script>
+<script src="../js/app-modal.js"></script>
+<script src="../js/app-player.js"></script>
+</body>
+</html>

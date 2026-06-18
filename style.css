@@ -1,0 +1,1315 @@
+/* =========================
+   전체 기본 설정
+========================= */
+:root{
+  --main:#b32647;
+  --main-dark:#87142e;
+  --purple-dark:#6d35d8;
+  --purple-light:#d9c6ff;
+  --purple-soft:#efe7ff;
+  --disabled:#e3e3e3;
+  --bg:#f5f6f8;
+  --card:#ffffff;
+  --line:#e6e6e6;
+  --text:#222;
+  --muted:#666;
+  --pl-row-h:72px;
+  --pl-max-h:540px;
+}
+
+*{ box-sizing:border-box; }
+
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:Arial, sans-serif;
+  text-align:center;
+  margin:0;
+  padding:0;
+}
+
+h1{ margin-top:22px; }
+h2{ margin-top:28px; }
+hr{ width:min(980px, 95%); border:0; border-top:1px solid #ddd; margin:24px auto; }
+
+#mainContent{ transition:none; }
+
+/* 가사 패널 열릴 때도 영상/본문은 밀리지 않게 고정 */
+body.lyrics-open #mainContent{ padding-right:0; }
+
+/* PC에서는 가사/MR/악보 패널이 화면 오른쪽 약 5분의 1만 차지 */
+@media (min-width:980px){
+  body.lyrics-open .lyrics-drawer{
+    width:22vw;
+    max-width:430px;
+    min-width:360px;
+  }
+}
+@media (max-width:979px){
+  body.lyrics-open #mainContent{ padding-right:0; }
+}
+
+/* =========================
+   메뉴 버튼
+========================= */
+.menu-box{
+  width:min(980px, 95%);
+  margin:0 auto;
+}
+.menu{
+  display:inline-block;
+  background:#fff;
+  border:1px solid #e3e3e3;
+  padding:12px 20px;
+  margin:8px;
+  border-radius:14px;
+  color:#222;
+  text-decoration:none;
+  font-size:18px;
+  transition:0.2s;
+}
+.menu:hover{ background:#f7e9ee; border-color:var(--main); }
+
+/* =========================
+   입력 & 버튼
+========================= */
+input, textarea{
+  display:block;
+  width:min(620px, 95%);
+  padding:10px;
+  border-radius:10px;
+  border:1px solid #ddd;
+  margin:8px auto;
+  background:#fff;
+  color:#222;
+  font-size:14px;
+}
+textarea{ resize:vertical; min-height:120px; }
+
+/* =========================
+   노래 추가 입력창 - 가로형
+========================= */
+.add-song-section{
+  width:min(1080px, 95%);
+  margin:0 auto 22px;
+}
+.add-song-section h2{
+  margin:18px 0 12px;
+}
+.add-song-row{
+  width:100%;
+  display:grid;
+  grid-template-columns:minmax(170px, 1fr) minmax(260px, 2.2fr) minmax(160px, 1fr) minmax(160px, 1fr) auto;
+  gap:10px;
+  align-items:end;
+}
+.add-song-row input,
+.add-song-row textarea{
+  width:100%;
+  margin:0;
+}
+.add-song-row textarea{
+  min-height:76px;
+  height:76px;
+  resize:vertical;
+}
+.add-song-btn{
+  min-width:62px;
+  height:42px;
+  margin:0;
+  font-weight:900;
+}
+
+button{
+  padding:8px 14px;
+  border-radius:9px;
+  border:none;
+  margin:5px;
+  background:var(--main);
+  color:#fff;
+  cursor:pointer;
+  transition:0.2s;
+}
+button:hover{ background:var(--main-dark); }
+
+.empty-center{ color:#777; padding:24px; }
+
+/* =========================
+   플레이어
+========================= */
+.player-wrap{
+  width:min(980px, 95%);
+  aspect-ratio:16/9;
+  margin:0 auto;
+}
+#player{
+  width:100%;
+  height:100%;
+  border:0;
+  border-radius:14px;
+  background:#000;
+  overflow:hidden;
+}
+
+/* =========================
+   햄버거 드로어
+========================= */
+.hamburger{
+  position:fixed;
+  top:14px;
+  left:14px;
+  z-index:100000;
+  background:var(--main);
+  color:#fff;
+  border:none;
+  border-radius:14px;
+  padding:10px 12px;
+  cursor:pointer;
+  font-size:18px;
+}
+.hamburger:hover{ background:var(--main-dark); }
+
+.drawer-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.3);
+  z-index:99998;
+  display:none;
+}
+.drawer-overlay.open{ display:block; }
+
+.drawer{
+  position:fixed;
+  top:0;
+  left:0;
+  width:300px;
+  max-width:85vw;
+  height:100vh;
+  background:#fff;
+  z-index:99999;
+  transform:translateX(-110%);
+  transition:transform 0.25s ease;
+  padding:18px;
+  box-shadow:12px 0 30px rgba(0,0,0,0.15);
+  text-align:left !important;
+  overflow:auto;
+}
+.drawer.open{ transform:translateX(0); }
+.drawer-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; }
+.drawer-title{ font-size:18px; font-weight:800; color:#222; }
+.drawer-section{ margin-top:14px; padding-top:12px; border-top:1px solid #eee; }
+.drawer-section h3{ margin:0 0 10px; font-size:13px; opacity:0.7; color:#555; }
+.drawer a{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  background:#fff;
+  color:#222;
+  text-decoration:none;
+  padding:10px 12px;
+  border-radius:14px;
+  margin:8px 0;
+  border:1px solid #eee;
+}
+.drawer a:hover{ background:#f7e9ee; border-color:var(--main); }
+.count-pill{ color:#777; font-size:13px; }
+
+/* =========================
+   플레이리스트
+========================= */
+.playlist{
+  width:min(980px, 95%);
+  margin:10px auto 20px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  max-height:var(--pl-max-h);
+  overflow-y:auto;
+}
+.pl-item{
+  min-height:var(--pl-row-h);
+  display:grid;
+  grid-template-columns:78px 120px 1fr 86px;
+  gap:12px;
+  align-items:center;
+  padding:10px 12px;
+  border-bottom:1px solid #eee;
+  cursor:pointer;
+  background:#fff;
+  text-align:left;
+}
+.pl-item:hover{ background:#f3f3f3; }
+.pl-item.active{ background:var(--purple-soft); }
+.pl-left{ display:flex; align-items:center; gap:8px; }
+.pl-index{ width:24px; text-align:center; color:#666; font-weight:700; }
+.pl-handle{ width:18px; display:flex; flex-direction:column; gap:4px; opacity:.5; }
+.pl-handle span{ display:block; height:2px; background:#777; border-radius:2px; }
+.pl-playing{ width:20px; color:var(--main); font-weight:900; }
+.pl-thumb img{ width:120px; height:68px; object-fit:cover; border-radius:10px; display:block; }
+.pl-title{ font-weight:800; color:#111; font-size:15px; line-height:1.35; }
+.pl-sub{ margin-top:4px; font-size:13px; color:#666; }
+
+
+.pl-mr-status{
+  width:72px;
+  min-width:72px;
+  height:42px;
+  margin:0;
+  border-radius:12px;
+  font-size:12px;
+  font-weight:900;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-shadow:none;
+}
+.pl-mr-status.status-current-has-mr{
+  background:var(--purple-dark);
+  color:#fff;
+}
+.pl-mr-status.status-current-no-mr{
+  background:#8f8f8f;
+  color:#fff;
+}
+.pl-mr-status.status-has-mr{
+  background:var(--purple-light);
+  color:#3d218a;
+}
+.pl-mr-status.status-no-mr{
+  background:var(--disabled);
+  color:#888;
+}
+.pl-mr-status:hover{ filter:brightness(0.96); }
+
+/* =========================
+   컨트롤 버튼
+========================= */
+.controls{
+  width:min(980px, 95%);
+  margin:10px auto 0;
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+.controls button{ padding:10px 12px; border-radius:12px; font-weight:800; }
+#btnSeq{ background:#1f9d55; }
+#btnRandOne,#btnRand10,#btnRandAuto{ background:#3aa0ff; }
+#btnLoop5,#btnLoop10,#btnLoopInf{ background:#7a3cff; }
+#btnEdit{ background:#f5c400; color:#222; }
+#btnDelete{ background:#e53935; }
+#btnSeq:hover{ background:#157a41; }
+#btnRandOne:hover,#btnRand10:hover,#btnRandAuto:hover{ background:#2d7fd1; }
+#btnLoop5:hover,#btnLoop10:hover,#btnLoopInf:hover{ background:#5f2fd1; }
+#btnEdit:hover{ background:#d8ab00; }
+#btnDelete:hover{ background:#c62828; }
+.active-control{ outline:3px solid rgba(0,0,0,.18); }
+
+/* =========================
+   가사 패널
+========================= */
+.lyrics-toggle{
+  position:fixed;
+  top:14px;
+  right:14px;
+  z-index:100000;
+  background:var(--main);
+  color:#fff;
+  border-radius:14px;
+  font-size:18px;
+}
+.lyrics-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.18);
+  z-index:99997;
+  display:none;
+}
+body.lyrics-open .lyrics-overlay{ display:block; }
+@media (min-width:980px){ body.lyrics-open .lyrics-overlay{ display:none; } }
+
+.lyrics-drawer{
+  position:fixed;
+  top:0;
+  right:0;
+  width:420px;
+  max-width:92vw;
+  height:100vh;
+  background:#f8f8f8;
+  border-left:1px solid #ddd;
+  transform:translateX(110%);
+  transition:transform 0.25s ease;
+  z-index:99999;
+  display:flex;
+  flex-direction:column;
+  text-align:left;
+}
+body.lyrics-open .lyrics-drawer{ transform:translateX(0); }
+.lyrics-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid #e6e6e6; background:#fff; }
+.lyrics-head-title{ font-weight:900; }
+.lyrics-close{ background:#333; }
+.lyrics-tabs{ display:flex; gap:10px; padding:10px 16px 6px; border-bottom:1px solid #e6e6e6; background:#fff; }
+.tab-link{
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:42px;
+  border-radius:14px;
+  font-weight:900;
+  text-decoration:none;
+  border:1px solid #ddd;
+  user-select:none;
+  background:#fff;
+  color:#222;
+  cursor:pointer;
+}
+button.tab-link{ appearance:none; -webkit-appearance:none; border:1px solid #ddd; }
+.tab-ready{ background:#f23b34; color:#fff; border-color:#f23b34; }
+.tab-active{ background:var(--main); color:#fff; border-color:var(--main); outline:4px solid rgba(132,82,238,.18); }
+.tab-disabled{ background:#eee; color:#999; border-color:#e3e3e3; pointer-events:none; opacity:0.95; }
+.tab-disabled-soft{ background:#eee; color:#999; border-color:#e3e3e3; opacity:0.95; }
+.lyrics-now-title{ padding:12px 16px 0; font-weight:900; color:#111; }
+.lyrics-body{ padding:10px 16px 16px; overflow:auto; flex:1; }
+.lyrics-body pre{ margin:0; white-space:pre-wrap; line-height:1.6; font-family:inherit; }
+.lyrics-media{ margin-top:10px; }
+.lyrics-media iframe{ width:100%; aspect-ratio:16/9; border:0; border-radius:14px; background:#000; }
+.lyrics-media .media-link{ display:inline-block; padding:10px 12px; border-radius:12px; background:#fff; border:1px solid #ddd; color:#222; text-decoration:none; font-weight:900; }
+
+
+.mr-empty{
+  background:#fff;
+  border:1px dashed #d8d8d8;
+  border-radius:14px;
+  padding:12px;
+  color:#666;
+  line-height:1.45;
+  font-size:13px;
+}
+.download-panel{
+  margin-top:14px;
+  padding:14px;
+  border-radius:16px;
+  background:#fff;
+  border:1px solid #e4e4e4;
+}
+.download-panel h3{
+  margin:0 0 6px;
+  font-size:16px;
+  color:#222;
+}
+.download-help{
+  margin:0 0 12px;
+  color:#777;
+  font-size:12px;
+  line-height:1.45;
+}
+.download-group-title{
+  margin:12px 0 7px;
+  font-size:13px;
+  font-weight:900;
+  color:#4a4a4a;
+}
+.download-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+.download-btn,
+.download-link-btn{
+  width:100%;
+  min-height:42px;
+  margin:0;
+  border-radius:12px;
+  font-weight:900;
+  background:var(--purple-dark);
+  color:#fff;
+  line-height:1.25;
+}
+.download-btn span{
+  font-size:11px;
+  opacity:.9;
+}
+.download-btn:hover,
+.download-link-btn:hover{ background:#5529ad; }
+.download-btn:disabled,
+.download-disabled{
+  background:#e2e2e2 !important;
+  color:#999 !important;
+  cursor:not-allowed;
+}
+.download-link-row{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-top:12px;
+}
+.download-link-btn{
+  background:#333;
+}
+.download-link-btn:hover{ background:#111; }
+
+/* =========================
+   수정 모달
+========================= */
+.modal-overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,0.45);
+  display:none;
+  align-items:center;
+  justify-content:center;
+  z-index:100001;
+  padding:16px;
+}
+.modal-overlay.open{ display:flex; }
+.modal-box{
+  width:min(560px, 95%);
+  max-height:90vh;
+  overflow:auto;
+  background:#fff;
+  border-radius:18px;
+  padding:20px;
+  box-shadow:0 20px 50px rgba(0,0,0,0.25);
+  text-align:center;
+  animation:modalPop 0.2s ease;
+}
+.modal-box input,.modal-box textarea{ width:100%; }
+.modal-actions{ margin-top:12px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+@keyframes modalPop{ from{ transform:scale(0.95); opacity:0; } to{ transform:scale(1); opacity:1; } }
+
+/* =========================
+   모바일
+========================= */
+@media (max-width:720px){
+  h1{ font-size:24px; padding:0 56px; }
+  .add-song-row{ grid-template-columns:1fr; }
+  .add-song-row textarea{ min-height:120px; height:auto; }
+  .add-song-btn{ width:100%; }
+  .pl-item{ grid-template-columns:58px 96px 1fr 64px; gap:8px; }
+  .pl-thumb img{ width:96px; height:54px; }
+  .pl-title{ font-size:14px; }
+  .pl-mr-status{ width:56px; min-width:56px; font-size:11px; }
+  .controls{ gap:4px; }
+  .controls button{ font-size:13px; padding:9px 10px; }
+  .download-grid{ grid-template-columns:1fr 1fr; }
+}
+
+
+/* =========================
+   저장 / 불러오기 버튼
+========================= */
+.backup-tools{
+  width:min(980px, 95%);
+  margin:10px auto 16px;
+  padding:12px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:0 6px 16px rgba(0,0,0,0.04);
+}
+.backup-tools .backup-btn{
+  background:#333;
+  font-weight:900;
+  border-radius:12px;
+  padding:10px 14px;
+}
+.backup-tools .backup-btn:hover{ background:#111; }
+.backup-help{
+  margin:6px 0 0;
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.4;
+}
+
+/* =========================
+   메모장 패널
+========================= */
+.memo-panel{
+  margin-top:4px;
+  height:100%;
+  display:flex;
+  flex-direction:column;
+}
+.memo-textarea{
+  width:100%;
+  min-height:360px;
+  flex:1;
+  margin:0;
+  padding:14px;
+  border-radius:14px;
+  border:1px solid #ddd;
+  background:#fff;
+  color:#222;
+  font-family:inherit;
+  font-size:14px;
+  line-height:1.6;
+  resize:none;
+  outline:none;
+}
+.memo-textarea:focus{
+  border-color:var(--main);
+  box-shadow:0 0 0 4px rgba(179,38,71,.12);
+}
+.memo-save-help{
+  margin:8px 2px 0;
+  color:#777;
+  font-size:12px;
+  line-height:1.4;
+}
+.video-link-help{
+  margin:0 0 14px;
+  color:#666;
+  font-size:13px;
+  line-height:1.5;
+}
+.video-link-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.video-link-actions .download-link-btn{
+  margin:0;
+  min-height:44px;
+}
+.video-link-actions .video-close-btn{
+  grid-column:1 / -1;
+  background:#777;
+}
+.video-link-actions .video-close-btn:hover{
+  background:#555;
+}
+
+/* =========================
+   왼쪽 노래 추가 + 재생목록 배치
+   - 가사/MR/악보 입력창은 HTML에서 제거됨
+========================= */
+.music-page-layout{
+  width:min(1620px, 96%);
+  margin:0 auto 28px;
+  display:grid;
+  grid-template-columns:480px minmax(620px, 980px);
+  gap:34px;
+  align-items:start;
+  justify-content:center;
+}
+.left-library-panel{
+  background:#fff;
+  border:1px solid #eeeeee;
+  min-height:78vh;
+  padding:18px 18px 24px;
+  text-align:center;
+  overflow:hidden;
+}
+.center-player-panel{
+  min-width:0;
+}
+.left-library-panel .add-song-section{
+  width:100%;
+  margin:0 0 18px;
+  background:#fafafa;
+  padding:8px 12px 16px;
+}
+.left-library-panel .add-song-section h2{
+  margin:4px 0 18px;
+}
+.left-library-panel .add-song-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:10px;
+  align-items:center;
+}
+.left-library-panel .add-song-row input{
+  width:100%;
+  margin:0;
+}
+.left-library-panel .add-song-btn{
+  height:42px;
+  margin:0;
+  white-space:nowrap;
+}
+.left-library-panel #topDivider{
+  width:100%;
+  margin:16px auto 8px;
+}
+.left-library-panel .playlist{
+  width:100%;
+  max-height:calc(78vh - 150px);
+  border-radius:0;
+  border-left:0;
+  border-right:0;
+  margin:0;
+}
+.left-library-panel .pl-item{
+  grid-template-columns:58px 104px minmax(0, 1fr) 64px;
+  gap:10px;
+  padding:10px 8px;
+}
+.left-library-panel .pl-thumb img{
+  width:104px;
+  height:58px;
+}
+.left-library-panel .pl-title{
+  font-size:14px;
+  overflow:hidden;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+}
+.left-library-panel .pl-mr-status{
+  width:58px;
+  min-width:58px;
+}
+.music-page-layout .player-wrap,
+.music-page-layout .controls{
+  width:100%;
+}
+
+@media (max-width:1180px){
+  .music-page-layout{
+    grid-template-columns:1fr;
+    width:min(980px, 95%);
+  }
+  .left-library-panel{
+    order:2;
+    min-height:auto;
+  }
+  .center-player-panel{
+    order:1;
+  }
+  .left-library-panel .playlist{
+    max-height:540px;
+  }
+}
+
+@media (max-width:720px){
+  .left-library-panel .add-song-row{
+    grid-template-columns:1fr;
+  }
+  .left-library-panel .add-song-btn{
+    width:100%;
+  }
+  .left-library-panel .pl-item{
+    grid-template-columns:52px 90px minmax(0, 1fr) 58px;
+  }
+  .left-library-panel .pl-thumb img{
+    width:90px;
+    height:52px;
+  }
+}
+
+/* =========================
+   배치 보정: 영상 가운데 + 왼쪽 재생목록 확대
+   - 왼쪽: 노래 추가/재생목록
+   - 가운데: 영상 플레이어
+========================= */
+#mainContent{
+  position:relative;
+}
+
+@media (min-width:1500px){
+  .music-page-layout{
+    width:100%;
+    max-width:none;
+    margin:0 auto 28px;
+    display:block;
+    position:relative;
+    min-height:78vh;
+  }
+
+  .left-library-panel{
+    position:absolute;
+    top:0;
+    left:clamp(28px, 3.2vw, 72px);
+    width:430px;
+    min-height:78vh;
+    padding:18px 18px 24px;
+  }
+
+  .center-player-panel{
+    width:clamp(780px, 44vw, 900px);
+    min-width:0;
+    margin:0 auto;
+  }
+
+  .music-page-layout .player-wrap,
+  .music-page-layout .controls{
+    width:100%;
+  }
+
+  .left-library-panel .playlist{
+    max-height:calc(78vh - 150px);
+  }
+}
+
+@media (min-width:1181px) and (max-width:1499px){
+  .music-page-layout{
+    width:min(1280px, 96%);
+    grid-template-columns:430px minmax(640px, 820px);
+    gap:26px;
+    justify-content:center;
+  }
+
+  .left-library-panel{
+    width:100%;
+    min-height:78vh;
+  }
+
+  .center-player-panel{
+    width:100%;
+  }
+}
+
+#btnDownload{
+  background:var(--main);
+}
+#btnDownload:hover{
+  background:var(--main-dark);
+}
+
+
+/* =========================
+   2026-05 추가 배치 수정
+   - 기본 영상 화면을 더 크게
+   - 왼쪽 노래추가/재생목록 상단을 저장/불러오기 박스와 같은 높이에 맞춤
+   - 오른쪽 가사 패널이 닫혀 있을 때 영상은 화면 중앙 기준 유지
+========================= */
+@media (min-width:1500px){
+  .backup-tools{
+    width:min(1000px, 52vw);
+    margin:10px auto 16px;
+  }
+
+  .music-page-layout{
+    width:100%;
+    max-width:none;
+    margin:0 auto 28px;
+    display:block;
+    position:relative;
+    min-height:calc(82vh + 92px);
+  }
+
+  .left-library-panel{
+    position:absolute;
+    /* 저장/불러오기 박스와 같은 줄에서 시작하게 위로 올림 */
+    top:-106px;
+    left:clamp(32px, 3vw, 64px);
+    width:430px;
+    min-height:calc(82vh + 92px);
+    padding:18px 18px 24px;
+  }
+
+  .center-player-panel{
+    width:min(1000px, 52vw);
+    min-width:0;
+    margin:0 auto;
+  }
+
+  .music-page-layout .player-wrap,
+  .music-page-layout .controls{
+    width:100%;
+  }
+
+  .left-library-panel .playlist{
+    max-height:calc(82vh - 60px);
+  }
+}
+
+@media (min-width:1181px) and (max-width:1499px){
+  .backup-tools{
+    width:min(940px, 95%);
+  }
+
+  .music-page-layout{
+    width:min(1420px, 96%);
+    grid-template-columns:430px minmax(720px, 940px);
+    gap:32px;
+    justify-content:center;
+    align-items:start;
+  }
+
+  .center-player-panel{
+    width:100%;
+  }
+}
+
+@media (max-width:1180px){
+  .music-page-layout{
+    width:min(1040px, 95%);
+  }
+}
+
+/* =========================
+   태그 기능
+========================= */
+.tag-tools{
+  width:min(1000px, 52vw);
+  margin:10px auto 16px;
+  padding:12px 14px;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:16px;
+  box-shadow:0 6px 16px rgba(0,0,0,0.04);
+  text-align:center;
+}
+.tag-tools-head{
+  display:flex;
+  justify-content:center;
+  align-items:baseline;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-bottom:10px;
+}
+.tag-tools-head strong{ font-size:18px; }
+.tag-tools-head span{ color:var(--muted); font-size:13px; }
+.tag-input-row{
+  display:grid;
+  grid-template-columns:1fr auto;
+  gap:10px;
+  align-items:center;
+  max-width:720px;
+  margin:0 auto;
+}
+.tag-input-row input{
+  width:100%;
+  margin:0;
+}
+.tag-input-row button,
+.tag-index-open{
+  background:#333;
+  color:#fff;
+  border-radius:12px;
+  font-weight:900;
+}
+.tag-input-row button:hover,
+.tag-index-open:hover{ background:#111; }
+.tag-help{
+  margin:7px 0 8px;
+  color:var(--muted);
+  font-size:12px;
+}
+.tag-cloud{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.tag-cloud.small{ gap:6px; }
+.tag-chip,
+.tag-edit-chip a{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  padding:6px 10px;
+  border:1px solid #dedede;
+  border-radius:999px;
+  background:#fff;
+  color:#222;
+  text-decoration:none;
+  font-weight:900;
+  font-size:12px;
+  line-height:1;
+}
+.tag-chip:hover,
+.tag-edit-chip a:hover{
+  border-color:var(--main);
+  background:#fff4f7;
+}
+.tag-count,
+.tag-edit-chip b{
+  min-width:18px;
+  height:18px;
+  padding:0 5px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:999px;
+  background:#111;
+  color:#fff;
+  font-size:11px;
+  font-weight:900;
+}
+.tag-edit-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+}
+.tag-edit-chip button{
+  width:24px;
+  height:24px;
+  padding:0;
+  margin:0;
+  border-radius:999px;
+  background:#eee;
+  color:#555;
+  font-weight:900;
+}
+.tag-edit-chip button:hover{ background:#df4c4c; color:#fff; }
+.tag-empty{
+  color:#888;
+  font-size:13px;
+}
+.song-tags-list{
+  justify-content:flex-start;
+  margin-top:7px;
+  gap:4px;
+}
+.song-tags-list .tag-chip{
+  padding:4px 7px;
+  font-size:11px;
+  max-width:110px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.song-tags-list .tag-count{ display:none; }
+.song-tags-drawer{
+  justify-content:flex-start;
+  padding:8px 16px 0;
+}
+.lyrics-now-tags:empty{ display:none; }
+.tag-page-card{
+  width:min(980px, 92%);
+  margin:18px auto;
+  background:#fff;
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:24px;
+  box-shadow:0 6px 16px rgba(0,0,0,0.04);
+}
+.tag-page-card h2{ margin-top:0; }
+.tag-page-help{
+  color:var(--muted);
+  line-height:1.55;
+  margin:0 0 18px;
+}
+.tag-index-cloud{
+  justify-content:flex-start;
+}
+.tag-index-chip{
+  font-size:15px;
+  padding:11px 14px;
+}
+.tag-page-topline{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+}
+.small-menu{
+  min-width:auto;
+  padding:10px 12px;
+  font-size:14px;
+}
+.tag-video-list{
+  display:grid;
+  gap:10px;
+}
+.tag-video-card{
+  display:grid;
+  grid-template-columns:150px minmax(0,1fr);
+  gap:14px;
+  align-items:center;
+  padding:10px;
+  border:1px solid #eee;
+  border-radius:16px;
+  color:#111;
+  text-decoration:none;
+  background:#fff;
+}
+.tag-video-card:hover{
+  border-color:var(--main);
+  background:#fff7f9;
+}
+.tag-video-thumb{
+  width:150px;
+  aspect-ratio:16/9;
+  background:#000;
+  border-radius:12px;
+  overflow:hidden;
+}
+.tag-video-thumb img{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+.tag-video-meta{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+  text-align:left;
+}
+.tag-video-meta strong{
+  font-size:16px;
+  overflow:hidden;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+}
+.tag-video-meta span{ color:#666; font-size:13px; }
+.tag-video-meta em{ color:#888; font-size:12px; font-style:normal; }
+
+@media (max-width:1180px){
+  .tag-tools{ width:min(1040px, 95%); }
+}
+@media (max-width:720px){
+  .tag-input-row{ grid-template-columns:1fr; }
+  .tag-input-row button{ width:100%; }
+  .tag-page-card{ padding:16px; }
+  .tag-video-card{ grid-template-columns:110px minmax(0,1fr); }
+  .tag-video-thumb{ width:110px; }
+}
+
+/* =========================
+   사이드 메뉴 수정 버전
+   - 노래: 연한 핑크 배경 + 하얀 글씨
+   - 유튜브 영상: 회색 배경 + 하얀 글씨
+   - 안쪽 메뉴: 하얀 네모창 + 검은 글씨
+========================= */
+.drawer{
+  padding:56px 18px 18px;
+  background:#fff;
+}
+.drawer-header,
+.drawer-title,
+.drawer-section h3,
+.drawer-section{
+  display:none;
+}
+.drawer-menu-block{
+  margin:0 0 14px;
+}
+.drawer-category{
+  width:100%;
+  min-height:44px;
+  margin:0 0 10px;
+  border:0;
+  border-radius:14px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  padding:11px 14px;
+  font-size:15px;
+  font-weight:900;
+  color:#fff;
+  cursor:pointer;
+  box-shadow:none;
+}
+.drawer-category-song{
+  background:#f3a7bd;
+}
+.drawer-category-song:hover{
+  background:#ee93ae;
+}
+.drawer-category-youtube{
+  background:#b7b7b7;
+}
+.drawer-category-youtube:hover{
+  background:#9f9f9f;
+}
+.drawer-link-group{
+  display:none;
+}
+.drawer-link-group.open{
+  display:block;
+}
+.drawer a,
+.drawer-menu-link{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  width:100%;
+  min-height:48px;
+  margin:8px 0;
+  padding:12px 14px;
+  background:#fff;
+  border:1px solid #eeeeee;
+  border-radius:14px;
+  color:#111;
+  text-decoration:none;
+  font-size:17px;
+  font-weight:500;
+  box-shadow:none;
+}
+.drawer a:hover,
+.drawer-menu-link:hover{
+  background:#fafafa;
+  border-color:#dedede;
+}
+.drawer-divider{
+  height:1px;
+  background:#eeeeee;
+  margin:14px 0 20px;
+}
+.drawer-home-link{
+  margin-top:20px;
+}
+.count-pill{
+  display:none;
+}
+
+/* =========================
+   재수정: 사이드 메뉴 순서/색 + 태그 박스 높이 고정
+========================= */
+.drawer{
+  padding:56px 18px 18px !important;
+  background:#fff !important;
+}
+.drawer-home-top{
+  margin-top:0 !important;
+  margin-bottom:14px !important;
+}
+.drawer-category-song{
+  background:#f3a7bd !important;
+  color:#fff !important;
+}
+.drawer-category-song:hover{
+  background:#ee93ae !important;
+}
+.drawer-category-youtube{
+  background:#e98ca8 !important;
+  color:#fff !important;
+}
+.drawer-category-youtube:hover{
+  background:#de7898 !important;
+}
+.drawer-tag-link{
+  width:100%;
+  min-height:44px;
+  margin:0 0 10px;
+  border:0;
+  border-radius:14px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  padding:11px 14px;
+  font-size:15px;
+  font-weight:900;
+  cursor:pointer;
+  box-shadow:none;
+  background:#d9d9d9;
+  color:#111;
+  text-decoration:none;
+}
+.drawer-tag-link:hover{
+  background:#cfcfcf;
+  color:#111;
+}
+.drawer-divider{
+  height:1px !important;
+  background:#eeeeee !important;
+  margin:14px 0 20px !important;
+}
+
+/* 태그를 추가해도 플레이어/왼쪽 재생목록이 아래로 밀리지 않게 높이를 고정 */
+.tag-tools{
+  height:142px;
+  min-height:142px;
+  max-height:142px;
+  overflow:hidden;
+}
+.tag-tools-head{
+  margin-bottom:10px;
+}
+.tag-cloud{
+  max-height:28px;
+  overflow-y:auto;
+  padding-bottom:1px;
+}
+
+/* 큰 화면에서 왼쪽 노래 추가/재생목록 위치를 처음 비율에 맞춤 */
+@media (min-width:1500px){
+  .music-page-layout{
+    min-height:calc(82vh + 150px) !important;
+  }
+  .left-library-panel{
+    top:-178px !important;
+    min-height:calc(82vh + 150px) !important;
+  }
+  .left-library-panel .playlist{
+    max-height:calc(82vh + 28px) !important;
+  }
+}
+
+@media (min-width:1181px) and (max-width:1499px){
+  .tag-tools{
+    width:min(940px, 95%);
+  }
+}
+
+/* =========================
+   2026-06-18 태그 잘림 수정
+   - 태그 영역은 고정 높이 유지
+   - 태그가 많아져도 내부에서만 스크롤
+   - 옆 노래 추가창/재생목록 위치는 밀리지 않게 유지
+========================= */
+.tag-cloud{
+  max-height:none;
+  overflow:visible;
+  padding-bottom:0;
+}
+
+.tag-tools{
+  height:142px;
+  min-height:142px;
+  max-height:142px;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;
+  padding:9px 14px 8px;
+}
+
+.tag-tools .tag-tools-head{
+  flex:0 0 auto;
+  margin-bottom:6px;
+  line-height:1.2;
+}
+.tag-tools .tag-tools-head strong,
+.tag-tools .tag-tools-head span{
+  line-height:1.2;
+}
+
+.tag-tools .tag-input-row{
+  flex:0 0 auto;
+}
+.tag-tools .tag-input-row input{
+  height:36px;
+  padding:8px 10px;
+}
+.tag-tools .tag-input-row button{
+  min-height:36px;
+  margin:0;
+  padding:8px 12px;
+}
+
+.tag-tools .tag-help{
+  flex:0 0 auto;
+  margin:4px 0;
+  line-height:1.2;
+}
+
+.tag-tools #currentSongTags{
+  flex:1 1 auto;
+  min-height:30px;
+  max-height:34px;
+  overflow-x:hidden;
+  overflow-y:auto;
+  align-content:flex-start;
+  padding:2px 4px 4px;
+  scrollbar-gutter:stable;
+}
+.tag-tools #currentSongTags .tag-edit-chip{
+  flex:0 0 auto;
+}
+.tag-tools #currentSongTags::-webkit-scrollbar{
+  width:6px;
+}
+.tag-tools #currentSongTags::-webkit-scrollbar-thumb{
+  background:#d7d7d7;
+  border-radius:999px;
+}
