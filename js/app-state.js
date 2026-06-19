@@ -92,6 +92,13 @@
       .filter(Boolean))];
   }
 
+  function normalizeVideoAspect(value) {
+    const text = String(value || "").trim().toLowerCase();
+    if (["portrait", "vertical", "세로", "9:16", "1080x1920"].includes(text)) return "portrait";
+    if (["landscape", "horizontal", "가로", "16:9", "1920x1080"].includes(text)) return "landscape";
+    return "";
+  }
+
   function addTags(existing, extra) {
     return normalizeTags([...(Array.isArray(existing) ? existing : normalizeTags(existing)), ...normalizeTags(extra)]);
   }
@@ -101,6 +108,13 @@
     const ytUrl = String(song.ytUrl || song.url || "").trim();
     const id = String(song.id || extractID(ytUrl) || "").trim();
     const title = String(song.title || "제목 없음").trim() || "제목 없음";
+    const thumbnailWidth = Number(song.thumbnailWidth || song.thumbnail_width || song.thumbWidth || 0) || 0;
+    const thumbnailHeight = Number(song.thumbnailHeight || song.thumbnail_height || song.thumbHeight || 0) || 0;
+    let aspect = normalizeVideoAspect(song.aspect || song.videoAspect || song.orientation || song.videoOrientation);
+    if (!aspect && thumbnailWidth > 0 && thumbnailHeight > 0) {
+      if (thumbnailHeight > thumbnailWidth * 1.15) aspect = "portrait";
+      else if (thumbnailWidth > thumbnailHeight * 1.15) aspect = "landscape";
+    }
     return {
       title,
       author: String(song.author || "").trim(),
@@ -111,7 +125,10 @@
       score: String(song.score || "").trim(),
       original: String(song.original || song.origin || song.originalUrl || "").trim(),
       memo: String(song.memo || ""),
-      tags: addTags(song.tags, extraTag)
+      tags: addTags(song.tags, extraTag),
+      aspect,
+      thumbnailWidth,
+      thumbnailHeight
     };
   }
 
@@ -161,8 +178,62 @@
   let current = 0;
   let dragIndex = null;
 
+  function isTagPage() {
+    return document.body?.dataset?.page === "tag";
+  }
+
+  function getCurrentTagParam() {
+    return normalizeTag(new URLSearchParams(location.search).get("tag") || "");
+  }
+
+  function setSongsRaw(value) {
+    songs = Array.isArray(value) ? value : [];
+  }
+
+  function findSongIndexInStore(sourceKey, song) {
+    const arr = cleanSongArray(readStorage(sourceKey));
+    const wantedId = String(song?.sourceId || song?.id || extractID(song?.ytUrl) || "").trim();
+    const wantedUrl = safeLink(song?.sourceUrl || song?.ytUrl);
+    const wantedIndex = Number(song?.sourceIndex ?? song?.index);
+
+    if (Number.isInteger(wantedIndex) && arr[wantedIndex]) {
+      const candidate = arr[wantedIndex];
+      const candidateId = candidate.id || extractID(candidate.ytUrl);
+      if ((wantedId && candidateId === wantedId) || (wantedUrl && safeLink(candidate.ytUrl) === wantedUrl)) {
+        return wantedIndex;
+      }
+    }
+
+    return arr.findIndex((item) => {
+      const itemId = item.id || extractID(item.ytUrl);
+      const itemUrl = safeLink(item.ytUrl);
+      return (wantedId && itemId === wantedId) || (wantedUrl && itemUrl === wantedUrl);
+    });
+  }
+
+  function saveSongToSource(song) {
+    const sourceKey = song?.sourceKey || song?.storeKey;
+    if (!sourceKey || !ALL_STORES.some((item) => item.key === sourceKey)) return false;
+
+    const arr = cleanSongArray(readStorage(sourceKey));
+    const idx = findSongIndexInStore(sourceKey, song);
+    if (idx < 0 || !arr[idx]) return false;
+
+    arr[idx] = cleanSong(song);
+    writeStorage(sourceKey, arr);
+    song.sourceIndex = idx;
+    song.index = idx;
+    song.sourceId = song.id || extractID(song.ytUrl);
+    song.sourceUrl = song.ytUrl;
+    return true;
+  }
+
   function save() {
-    if (storeKey !== "main") writeStorage(storeKey, songs);
+    if (isTagPage()) {
+      songs.forEach((song) => saveSongToSource(song));
+    } else if (storeKey !== "main") {
+      writeStorage(storeKey, songs);
+    }
     if (typeof updateDrawerCounts === "function") updateDrawerCounts();
     if (typeof renderTagTools === "function") renderTagTools();
   }
@@ -173,15 +244,38 @@
       const res = await fetch(api);
       if (!res.ok) throw new Error("oEmbed 실패");
       const data = await res.json();
-      return { title: data.title || "제목 없음", author: data.author_name || "" };
+      const thumbnailWidth = Number(data.thumbnail_width || 0) || 0;
+      const thumbnailHeight = Number(data.thumbnail_height || 0) || 0;
+      let aspect = "";
+      if (thumbnailWidth > 0 && thumbnailHeight > 0) {
+        if (thumbnailHeight > thumbnailWidth * 1.15) aspect = "portrait";
+        else if (thumbnailWidth > thumbnailHeight * 1.15) aspect = "landscape";
+      }
+      return {
+        title: data.title || "제목 없음",
+        author: data.author_name || "",
+        aspect,
+        thumbnailWidth,
+        thumbnailHeight
+      };
     } catch {
-      return { title: "제목 없음", author: "" };
+      return { title: "제목 없음", author: "", aspect: "", thumbnailWidth: 0, thumbnailHeight: 0 };
     }
   }
 
   function getAllSongs() {
     return ALL_STORES.flatMap((collection) =>
-      cleanSongArray(readStorage(collection.key)).map((song, index) => ({ ...song, storeKey: collection.key, country: collection, collection, index }))
+      cleanSongArray(readStorage(collection.key)).map((song, index) => ({
+        ...song,
+        storeKey: collection.key,
+        sourceKey: collection.key,
+        sourceIndex: index,
+        sourceId: song.id || extractID(song.ytUrl),
+        sourceUrl: song.ytUrl,
+        country: collection,
+        collection,
+        index
+      }))
     );
   }
 
@@ -220,12 +314,18 @@
     fetchYouTubeMeta,
     normalizeTag,
     normalizeTags,
+    normalizeVideoAspect,
     addTags,
     cleanSong,
     cleanSongArray,
     getAllSongs,
     getTagCounts,
-    getTagPageUrl
+    getTagPageUrl,
+    isTagPage,
+    getCurrentTagParam,
+    setSongsRaw,
+    saveSongToSource,
+    findSongIndexInStore
   };
 })();
 
@@ -391,7 +491,7 @@
 
   function createBackupButtons() {
     if (document.getElementById("backupTools")) return;
-    if (document.body?.dataset?.store) return; // 노래 재생 페이지에는 저장/불러오기 박스 대신 태그 박스를 넣음
+    if (document.body?.dataset?.store || document.body?.dataset?.page === "tag") return; // 노래 재생 페이지/태그 재생 페이지에는 저장/불러오기 박스를 띄우지 않음
 
     const box = document.createElement("div");
     box.id = "backupTools";

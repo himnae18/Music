@@ -31,7 +31,7 @@
       <input id="editAuthor" placeholder="채널/가수" value="${editEscapeHTML(s.author)}" />
       <input id="editYt" placeholder="유튜브 링크" value="${editEscapeHTML(s.ytUrl)}" />
       <input id="editMr" placeholder="MR 링크" value="${editEscapeHTML(s.mr)}" />
-      <input id="editOriginal" placeholder="원곡 링크" value="${editEscapeHTML(s.original || "")}" />
+      <input id="editOriginal" placeholder="기타 / 원곡 링크" value="${editEscapeHTML(s.original || "")}" />
       <input id="editTags" placeholder="태그 예: 노래, 추천곡" value="${editEscapeHTML((s.tags || []).join(", "))}" />
 
       <div class="modal-actions">

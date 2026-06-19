@@ -25,7 +25,10 @@ async function addSong() {
     score,
     original,
     memo: "",
-    tags: []
+    tags: [],
+    aspect: meta.aspect || "",
+    thumbnailWidth: meta.thumbnailWidth || 0,
+    thumbnailHeight: meta.thumbnailHeight || 0
   });
 
   save();
@@ -41,6 +44,39 @@ async function addSong() {
 
 function deleteSong(index) {
   if (!songs[index]) return;
+
+  if (window.AppState?.isTagPage?.()) {
+    const tag = window.AppState.getCurrentTagParam?.() || "";
+    if (!tag) return;
+    if (!confirm(`이 영상에서 #${tag} 태그만 제거할까?
+원래 페이지의 영상은 삭제되지 않아.`)) return;
+
+    const song = songs[index];
+    song.tags = normalizeTags(song.tags).filter((item) => item !== tag);
+    window.AppState.saveSongToSource?.(song);
+
+    const wasCurrentTag = index === current;
+    songs.splice(index, 1);
+    if (songs.length === 0) {
+      if (ytPlayer) ytPlayer.stopVideo();
+      current = 0;
+      showList();
+      updateLyricsDrawer();
+      updateControlLabels();
+      if (typeof renderTagTools === "function") renderTagTools();
+      return;
+    }
+
+    if (index < current) current--;
+    if (current >= songs.length) current = songs.length - 1;
+    showList();
+    updateLyricsDrawer();
+    updateControlLabels();
+    if (typeof renderTagTools === "function") renderTagTools();
+    if (wasCurrentTag) play(current);
+    return;
+  }
+
   if (!confirm("이 노래를 삭제할까?")) return;
 
   const wasCurrent = index === current;
@@ -324,6 +360,123 @@ function prunePlayHistory() {
   updateHistoryButtons();
 }
 
+const videoAspectCache = new Map();
+
+function getStoredVideoAspect(song) {
+  const raw = String(song?.aspect || song?.videoAspect || song?.orientation || song?.videoOrientation || "").trim().toLowerCase();
+  if (["portrait", "vertical", "세로", "9:16", "1080x1920"].includes(raw)) return "portrait";
+  if (["landscape", "horizontal", "가로", "16:9", "1920x1080"].includes(raw)) return "landscape";
+
+  const w = Number(song?.thumbnailWidth || song?.thumbnail_width || song?.thumbWidth || 0) || 0;
+  const h = Number(song?.thumbnailHeight || song?.thumbnail_height || song?.thumbHeight || 0) || 0;
+  if (w > 0 && h > 0) {
+    if (h > w * 1.15) return "portrait";
+    if (w > h * 1.15) return "landscape";
+  }
+
+  return "";
+}
+
+function getLikelyVideoAspect(song) {
+  const stored = getStoredVideoAspect(song);
+  if (stored) return stored;
+
+  const url = safeLink(song?.ytUrl || song?.url || "");
+  if (/youtube\.com\/shorts\//i.test(url) || /\/shorts\//i.test(url)) return "portrait";
+
+  const hintText = [
+    song?.title || "",
+    song?.author || "",
+    ...(Array.isArray(song?.tags) ? song.tags : [])
+  ].join(" ").toLowerCase();
+  if (/(^|[#\s])(shorts?|쇼츠)($|[#\s])|세로|vertical|9:16|1080x1920/i.test(hintText)) return "portrait";
+
+  const id = String(song?.id || extractID(url) || "").trim();
+  if (id && videoAspectCache.has(id)) return videoAspectCache.get(id);
+
+  return "landscape";
+}
+
+function setPlayerAspectClass(aspect) {
+  const wrap = document.querySelector(".player-wrap");
+  if (!wrap) return;
+
+  wrap.classList.remove("player-portrait", "player-landscape");
+  wrap.classList.add(aspect === "portrait" ? "player-portrait" : "player-landscape");
+}
+
+function loadImageSize(src, timeout = 2200) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    let done = false;
+
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+
+    const timer = setTimeout(() => finish(null), timeout);
+    img.onload = () => finish({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 });
+    img.onerror = () => finish(null);
+    img.src = src;
+  });
+}
+
+async function detectThumbnailAspect(song) {
+  const url = safeLink(song?.ytUrl || song?.url || "");
+  const id = String(song?.id || extractID(url) || "").trim();
+  if (!id) return "";
+  if (videoAspectCache.has(id)) return videoAspectCache.get(id);
+
+  const candidates = [
+    `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+    `https://i.ytimg.com/vi/${id}/hq720.jpg`,
+    `https://i.ytimg.com/vi/${id}/sddefault.jpg`,
+    `https://i.ytimg.com/vi/${id}/hqdefault.jpg`
+  ];
+
+  for (const src of candidates) {
+    const size = await loadImageSize(src);
+    if (!size || size.width < 240 || size.height < 240) continue;
+
+    if (size.height > size.width * 1.15) {
+      videoAspectCache.set(id, "portrait");
+      return "portrait";
+    }
+
+    if (size.width > size.height * 1.15) {
+      videoAspectCache.set(id, "landscape");
+      return "landscape";
+    }
+  }
+
+  videoAspectCache.set(id, "landscape");
+  return "landscape";
+}
+
+function applyPlayerFrame(song) {
+  const wrap = document.querySelector(".player-wrap");
+  if (!wrap) return;
+
+  const url = safeLink(song?.ytUrl || song?.url || "");
+  const id = String(song?.id || extractID(url) || "").trim();
+  wrap.dataset.videoId = id;
+
+  const firstAspect = getLikelyVideoAspect(song);
+  setPlayerAspectClass(firstAspect);
+
+  if (firstAspect === "portrait" || getStoredVideoAspect(song)) return;
+
+  detectThumbnailAspect(song).then((detectedAspect) => {
+    if (!detectedAspect) return;
+    const currentId = String(wrap.dataset.videoId || "");
+    if (id && currentId !== id) return;
+    setPlayerAspectClass(detectedAspect);
+  }).catch(() => {});
+}
+
 function ensurePlayerReady(cb) {
   if (ytPlayer && apiReady) {
     cb();
@@ -382,6 +535,7 @@ function play(i, options = {}) {
   }
 
   current = nextIndex;
+  applyPlayerFrame(songs[nextIndex]);
 
   ensurePlayerReady(() => {
     ytPlayer.loadVideoById(songs[nextIndex].id);
@@ -435,6 +589,7 @@ function playMr(i) {
   }
 
   current = i;
+  applyPlayerFrame({ ytUrl: mrUrl, id: mrId });
   ensurePlayerReady(() => {
     ytPlayer.loadVideoById(mrId);
     setTimeout(() => setPlayerPlaybackRate(desiredPlaybackRate, 0, { silent: true }), 350);

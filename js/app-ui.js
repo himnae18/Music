@@ -41,6 +41,48 @@
     }) || null;
   }
 
+
+  function isTagPage() {
+    return typeof S.isTagPage === "function" && S.isTagPage();
+  }
+
+  function songIdentity(song) {
+    const url = S.safeLink(song?.ytUrl);
+    return {
+      id: String(song?.id || S.extractID(url) || "").trim(),
+      url
+    };
+  }
+
+  function sameSong(a, b) {
+    const A = songIdentity(a);
+    const B = songIdentity(b);
+    return Boolean((A.id && B.id && A.id === B.id) || (A.url && B.url && A.url === B.url));
+  }
+
+  function getSongLocations(song) {
+    if (!song) return [];
+    const seen = new Set();
+    return S.getAllSongs().filter((item) => sameSong(item, song)).filter((item) => {
+      const key = `${item.storeKey || item.sourceKey}|${item.index}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  function pageSongHref(collection, song) {
+    if (!collection?.page) return "#";
+    const playKey = song?.id || song?.ytUrl || "";
+    return `${getCollectionPageHref(collection)}${playKey ? `?play=${encodeURIComponent(playKey)}` : ""}`;
+  }
+
+  function collectionBadgeText(song) {
+    const collection = song?.collection || song?.country;
+    if (!collection) return "";
+    return `${collection.emoji || ""} ${collection.label || ""}`.trim();
+  }
+
   async function copyText(text, successMessage = "복사했어!") {
     if (!text) {
       alert("복사할 링크가 없어.");
@@ -97,6 +139,8 @@
         ? (hasMr ? "status-current-has-mr" : "status-current-no-mr")
         : (hasMr ? "status-has-mr" : "status-no-mr");
       const statusLabel = hasMr ? "MR" : "없음";
+      const sourceBadge = isTagPage() ? collectionBadgeText(s) : "";
+      const subText = [S.safeText(s.author || ""), sourceBadge].filter(Boolean).join(" · ");
 
       html += `
         <div class="pl-item${active}"
@@ -120,7 +164,7 @@
 
           <div class="pl-meta">
             <div class="pl-title">${S.escapeHTML(s.title || "제목 없음")}</div>
-            <div class="pl-sub">${S.escapeHTML(s.author || "")}</div>
+            <div class="pl-sub">${S.escapeHTML(subText)}</div>
           </div>
 
           <button class="pl-mr-status ${statusClass}" type="button"
@@ -224,19 +268,90 @@
     });
   }
 
-  function originalPanelHTML(song) {
+  function extraPanelHTML(song) {
     const url = getOriginalUrl(song);
     const found = url ? findSongByUrl(url) : null;
+    const locations = getSongLocations(song);
+    const tags = S.normalizeTags(song?.tags);
     const foundText = found
-      ? `웹사이트 안에 같은 노래가 있어. 원곡 버튼을 누르면 ${S.escapeHTML(found.collection?.label || "해당 페이지")}로 이동해.`
-      : (url ? "웹사이트 안에 같은 노래가 없으면 유튜브 링크로 열려." : "수정창에서 원곡 링크를 넣으면 여기 버튼으로 이동할 수 있어.");
-
+      ? `웹사이트 안에 같은 원곡이 있어. 버튼을 누르면 ${S.escapeHTML(found.collection?.label || "해당 페이지")}로 이동해.`
+      : (url ? "웹사이트 안에 같은 영상이 없으면 유튜브 링크로 열려." : "수정창에서 원곡 링크를 넣으면 여기에서 이동할 수 있어.");
+    const showPathInOriginalTab = !isTagPage();
     return `
-      <section class="original-panel" aria-label="원곡 이동">
-        <button id="openOriginalBtn" class="original-open-btn" type="button" ${url ? "" : "disabled"}>원곡 버튼</button>
-        <p class="original-help">${foundText}</p>
-        ${url ? `<div class="original-url-box">${S.escapeHTML(url)}</div>` : `<div class="original-empty">원곡 링크가 아직 없어.</div>`}
+      <section class="original-panel extra-panel" aria-label="기타 정보">
+        ${showPathInOriginalTab ? `
+        <div class="extra-section">
+          <h3>저장 위치 / 경로</h3>
+          <p class="original-help">이 영상이 들어있는 원래 페이지로 바로 이동할 수 있어.</p>
+          <div class="song-path-list">
+            ${locations.length ? locations.map((item) => `
+              <a class="song-path-chip" href="${pageSongHref(item.collection, item)}">
+                <span>${S.escapeHTML(collectionBadgeText(item) || "저장 위치")}</span>
+                <b>${Number(item.index) + 1}번</b>
+              </a>
+            `).join("") : `<span class="original-empty">저장 위치를 찾지 못했어.</span>`}
+          </div>
+        </div>
+        ` : ""}
+
+        <div class="extra-section">
+          <h3>태그</h3>
+          <div class="song-tags song-tags-extra">
+            ${tags.length ? tags.map((tag) => tagChipHTML(tag, new Map(S.getTagCounts("all")).get(tag) || 1)).join("") : `<p class="tag-empty">태그가 아직 없어.</p>`}
+          </div>
+        </div>
+
+        <div class="extra-section">
+          <h3>원곡</h3>
+          <button id="openOriginalBtn" class="original-open-btn" type="button" ${url ? "" : "disabled"}>원곡 열기</button>
+          <p class="original-help">${foundText}</p>
+          ${url ? `<div class="original-url-box">${S.escapeHTML(url)}</div>` : `<div class="original-empty">원곡 링크가 아직 없어.</div>`}
+        </div>
       </section>
+    `;
+  }
+
+  function renderTagPlayerSummary() {
+    const holder = document.getElementById("tagPlayerMeta");
+    if (!holder || !isTagPage()) return;
+
+    const s = getCurrentSong();
+    if (!s) {
+      holder.innerHTML = `
+        <div class="tag-summary-block">
+          <h3>저장 위치 / 경로</h3>
+          <p class="tag-page-help">영상을 선택하면 원래 페이지로 이동하는 경로가 여기 보여.</p>
+        </div>
+        <div class="tag-summary-block">
+          <h3>태그</h3>
+          <p class="tag-page-help">영상을 선택하면 태그도 여기서 바로 볼 수 있어.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const locations = getSongLocations(s);
+    const tags = S.normalizeTags(s?.tags);
+    const tagCounts = new Map(S.getTagCounts("all"));
+
+    holder.innerHTML = `
+      <div class="tag-summary-block">
+        <h3>저장 위치 / 경로</h3>
+        <div class="song-path-list tag-summary-paths">
+          ${locations.length ? locations.map((item) => `
+            <a class="song-path-chip" href="${pageSongHref(item.collection, item)}">
+              <span>${S.escapeHTML(collectionBadgeText(item) || "저장 위치")}</span>
+              <b>${Number(item.index) + 1}번</b>
+            </a>
+          `).join("") : `<span class="original-empty">저장 위치를 찾지 못했어.</span>`}
+        </div>
+      </div>
+      <div class="tag-summary-block">
+        <h3>태그</h3>
+        <div class="song-tags song-tags-extra tag-summary-tags">
+          ${tags.length ? tags.map((tag) => tagChipHTML(tag, tagCounts.get(tag) || 1)).join("") : `<p class="tag-empty">태그가 아직 없어.</p>`}
+        </div>
+      </div>
     `;
   }
 
@@ -255,7 +370,7 @@
 
     const found = findSongByUrl(url);
     if (found) {
-      if (found.storeKey === S.storeKey) {
+      if (found.storeKey === S.storeKey && !isTagPage()) {
         if (typeof play === "function") play(found.index);
         return;
       }
@@ -280,6 +395,7 @@
 
     getLyricsLockButton();
     updateLockUI();
+    renderTagPlayerSummary();
 
     if (!titleEl || !textEl || !mediaEl || !tabLyrics || !tabMr || !tabOriginal) return;
 
@@ -291,12 +407,13 @@
     tabOriginal.className = "tab-link";
 
     if (!s) {
-      if (headTitle) headTitle.textContent = "가사 / 메모";
-      titleEl.textContent = document.body?.dataset?.store?.startsWith("yt") ? "재생중인 영상이 없어" : "재생중인 곡이 없어";
+      if (headTitle) headTitle.textContent = "가사 / 메모 / 기타";
+      const videoLikePage = isTagPage() || document.body?.dataset?.store?.startsWith("yt");
+      titleEl.textContent = videoLikePage ? "재생중인 영상이 없어" : "재생중인 곡이 없어";
       if (tagEl) tagEl.innerHTML = "";
-      textEl.textContent = document.body?.dataset?.store?.startsWith("yt")
-        ? "영상을 재생하면 여기서 설명/메모를 볼 수 있어."
-        : "노래를 재생하면 여기서 가사/메모를 볼 수 있어.";
+      textEl.textContent = videoLikePage
+        ? "영상을 재생하면 여기서 설명/메모/기타 정보를 볼 수 있어."
+        : "노래를 재생하면 여기서 가사/메모/기타 정보를 볼 수 있어.";
       textEl.style.display = "block";
       mediaEl.style.display = "none";
       mediaEl.innerHTML = "";
@@ -323,19 +440,19 @@
       bindTextEditorAutosave();
       updateLockUI();
     } else if (activeTab === "original") {
-      if (headTitle) headTitle.textContent = "원곡";
+      if (headTitle) headTitle.textContent = "기타";
       tabOriginal.classList.add("tab-active");
-      mediaEl.innerHTML = originalPanelHTML(s);
+      mediaEl.innerHTML = extraPanelHTML(s);
       bindOriginalPanel();
       updateLockUI();
     } else {
       activeTab = "lyrics";
-      if (headTitle) headTitle.textContent = document.body?.dataset?.store?.startsWith("yt") ? "설명" : "가사";
+      if (headTitle) headTitle.textContent = (isTagPage() || document.body?.dataset?.store?.startsWith("yt")) ? "설명" : "가사";
       tabLyrics.classList.add("tab-active");
       mediaEl.innerHTML = editorPanelHTML(
         s,
         "lyrics",
-        document.body?.dataset?.store?.startsWith("yt")
+        (isTagPage() || document.body?.dataset?.store?.startsWith("yt"))
           ? "여기에 설명을 적어줘. 쓰는 즉시 자동 저장돼."
           : "여기에 가사를 적어줘. 쓰는 즉시 자동 저장돼."
       );
@@ -346,29 +463,50 @@
 
   function renderTagTools() {
     const holder = document.getElementById("tagTools");
-    if (!holder || !document.body?.dataset?.store) return;
+    if (!holder) return;
+    if (!document.body?.dataset?.store && !isTagPage()) return;
 
     const s = getCurrentSong();
-    const countryCounts = new Map(S.getTagCounts(S.storeKey));
+    const countScope = isTagPage() ? "all" : S.storeKey;
+    const countryCounts = new Map(S.getTagCounts(countScope));
     const currentTags = S.normalizeTags(s?.tags);
+    const locations = getSongLocations(s);
+    const showPathBox = isTagPage();
 
     holder.innerHTML = `
       <div class="tag-tools-head">
         <strong># 태그</strong>
-        <span>${s ? "현재 재생/선택한 곡에 태그를 넣는 곳" : "곡을 선택하면 태그를 넣을 수 있어"}</span>
+        <span>${s ? "현재 재생/선택한 영상에 태그를 넣는 곳" : "영상을 선택하면 태그를 넣을 수 있어"}</span>
       </div>
-      <div class="tag-input-row">
-        <input id="tagInput" placeholder="예: 노래, 노래방, 추천곡" ${s ? "" : "disabled"} />
-        <button id="addTagBtn" type="button" ${s ? "" : "disabled"}>태그 추가</button>
-      </div>
-      <p class="tag-help">쉼표, 띄어쓰기, #으로 여러 개를 한 번에 넣을 수 있어.</p>
-      <div id="currentSongTags" class="tag-cloud small">
-        ${currentTags.length ? currentTags.map((tag) => `
-          <span class="tag-edit-chip">
-            <a href="${S.getTagPageUrl(tag)}">#${S.escapeHTML(tag)} <b>${countryCounts.get(tag) || 1}</b></a>
-            <button type="button" data-remove-tag="${S.escapeHTML(tag)}" title="태그 삭제">×</button>
-          </span>
-        `).join("") : `<span class="tag-empty">현재 곡 태그 없음</span>`}
+      <div class="tag-tools-main ${showPathBox ? "has-path-box" : ""}">
+        <div class="tag-tools-main-left">
+          <div class="tag-input-row">
+            <input id="tagInput" placeholder="예: 노래, 노래방, 추천곡" ${s ? "" : "disabled"} />
+            <button id="addTagBtn" type="button" ${s ? "" : "disabled"}>태그 추가</button>
+          </div>
+          <p class="tag-help">쉼표, 띄어쓰기, #으로 여러 개를 한 번에 넣을 수 있어.</p>
+          <div id="currentSongTags" class="tag-cloud small">
+            ${currentTags.length ? currentTags.map((tag) => `
+              <span class="tag-edit-chip">
+                <a href="${S.getTagPageUrl(tag)}">#${S.escapeHTML(tag)} <b>${countryCounts.get(tag) || 1}</b></a>
+                <button type="button" data-remove-tag="${S.escapeHTML(tag)}" title="태그 삭제">×</button>
+              </span>
+            `).join("") : `<span class="tag-empty">현재 곡 태그 없음</span>`}
+          </div>
+        </div>
+        ${showPathBox ? `
+        <div class="tag-tools-path-box">
+          <div class="tag-tools-path-head">경로</div>
+          <div class="song-path-list tag-tools-path-list">
+            ${s ? (locations.length ? locations.map((item) => `
+              <a class="song-path-chip" href="${pageSongHref(item.collection, item)}">
+                <span>${S.escapeHTML(collectionBadgeText(item) || "저장 위치")}</span>
+                <b>${Number(item.index) + 1}번</b>
+              </a>
+            `).join("") : `<span class="original-empty">저장 위치를 찾지 못했어.</span>`) : `<span class="tag-empty">영상을 선택하면 경로가 보여.</span>`}
+          </div>
+        </div>
+        ` : ""}
       </div>
     `;
 
@@ -540,6 +678,7 @@
   window.showList = showList;
   window.updateLyricsDrawer = updateLyricsDrawer;
   window.renderTagTools = renderTagTools;
+  window.renderTagPlayerSummary = renderTagPlayerSummary;
   window.onDragStart = onDragStart;
   window.onDragOver = onDragOver;
   window.onDrop = onDrop;
