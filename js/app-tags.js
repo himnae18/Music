@@ -3,6 +3,8 @@
   const S = window.AppState;
   if (!S) return;
 
+  const TITLE_TAGS_KEY = "musicTitleTags";
+
   function tagParam() {
     return S.normalizeTag(new URLSearchParams(location.search).get("tag") || "");
   }
@@ -13,6 +15,159 @@
 
   function tagPageUrl(tag) {
     return `tag.html?tag=${encodeURIComponent(tag)}`;
+  }
+
+  function readTitleTags() {
+    try {
+      const data = JSON.parse(localStorage.getItem(TITLE_TAGS_KEY) || "[]");
+      return S.normalizeTags(Array.isArray(data) ? data : []);
+    } catch {
+      return [];
+    }
+  }
+
+  function writeTitleTags(tags) {
+    localStorage.setItem(TITLE_TAGS_KEY, JSON.stringify(S.normalizeTags(tags)));
+  }
+
+  function isTitleTag(tag) {
+    return readTitleTags().includes(S.normalizeTag(tag));
+  }
+
+  function registerTitleTag(tag) {
+    const clean = S.normalizeTag(tag);
+    if (!clean) return false;
+    const tags = S.addTags(readTitleTags(), [clean]);
+    writeTitleTags(tags);
+    return true;
+  }
+
+  function unregisterTitleTag(tag) {
+    const clean = S.normalizeTag(tag);
+    if (!clean) return false;
+    writeTitleTags(readTitleTags().filter((item) => item !== clean));
+    return true;
+  }
+
+  function removeTagEverywhere(tag) {
+    const clean = S.normalizeTag(tag);
+    if (!clean) return 0;
+
+    let changedSongs = 0;
+    (S.ALL_STORES || []).forEach((store) => {
+      const songs = S.cleanSongArray(S.readStorage(store.key));
+      let changed = false;
+      const next = songs.map((song) => {
+        const before = S.normalizeTags(song.tags);
+        const after = before.filter((item) => item !== clean);
+        if (after.length !== before.length) {
+          changed = true;
+          changedSongs += 1;
+          return { ...song, tags: after };
+        }
+        return song;
+      });
+
+      if (changed) S.writeStorage(store.key, next);
+    });
+
+    unregisterTitleTag(clean);
+    if (typeof updateDrawerCounts === "function") updateDrawerCounts();
+    return changedSongs;
+  }
+
+  function flashDropZone(zone, text) {
+    if (!zone) return;
+    const old = zone.querySelector("strong")?.textContent || "";
+    zone.classList.add("tag-drop-done");
+    const strong = zone.querySelector("strong");
+    if (strong && text) strong.textContent = text;
+    window.setTimeout(() => {
+      zone.classList.remove("tag-drop-done");
+      if (strong && old) strong.textContent = old;
+    }, 650);
+  }
+
+  function bindTagDragActions(root) {
+    if (!root) return;
+
+    root.querySelectorAll("[data-drag-tag]").forEach((chip) => {
+      chip.addEventListener("dragstart", (e) => {
+        const tag = S.normalizeTag(chip.getAttribute("data-drag-tag") || "");
+        if (!tag) return;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("application/x-music-tag", tag);
+        e.dataTransfer.setData("text/plain", `#${tag}`);
+        chip.classList.add("is-dragging");
+      });
+
+      chip.addEventListener("dragend", () => {
+        chip.classList.remove("is-dragging");
+        root.querySelectorAll(".tag-drop-over").forEach((el) => el.classList.remove("tag-drop-over"));
+      });
+    });
+
+    root.querySelectorAll("[data-tag-drop-action]").forEach((zone) => {
+      zone.addEventListener("dragover", (e) => {
+        const hasTag = Array.from(e.dataTransfer?.types || []).includes("application/x-music-tag");
+        if (!hasTag) return;
+        e.preventDefault();
+        zone.classList.add("tag-drop-over");
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      });
+
+      zone.addEventListener("dragleave", () => {
+        zone.classList.remove("tag-drop-over");
+      });
+
+      zone.addEventListener("drop", (e) => {
+        const tag = S.normalizeTag(e.dataTransfer?.getData("application/x-music-tag") || "");
+        if (!tag) return;
+        e.preventDefault();
+        zone.classList.remove("tag-drop-over");
+
+        const action = zone.getAttribute("data-tag-drop-action");
+        if (action === "delete") {
+          const ok = confirm(`#${tag} 태그를 모든 노래/영상에서 삭제할까?\n되돌리려면 다시 태그를 넣어야 해.`);
+          if (!ok) return;
+          const count = removeTagEverywhere(tag);
+          flashDropZone(zone, "삭제 완료");
+          renderTagIndex();
+          if (count === 0) alert("삭제할 태그를 찾지 못했어.");
+          return;
+        }
+
+        if (action === "register-title") {
+          registerTitleTag(tag);
+          flashDropZone(zone, "등록 완료");
+          renderTagIndex();
+          return;
+        }
+
+        if (action === "unregister-title") {
+          unregisterTitleTag(tag);
+          flashDropZone(zone, "해제 완료");
+          renderTagIndex();
+        }
+      });
+    });
+  }
+
+  function tagChipHTML(tag, count, titleTags) {
+    const clean = S.normalizeTag(tag);
+    const safe = S.escapeHTML(clean);
+    const registered = titleTags.includes(clean);
+    return `
+      <a class="tag-chip tag-index-chip ${registered ? "is-title-tag" : ""}"
+        href="${tagPageUrl(clean)}"
+        draggable="true"
+        data-drag-tag="${safe}"
+        title="드래그해서 왼쪽은 삭제, 오른쪽은 제목등록">
+        #${safe}
+        ${registered ? `<span class="tag-title-badge">제목</span>` : ""}
+        <span class="tag-count">${count}</span>
+      </a>
+    `;
   }
 
   function showTagIndex(root, counts) {
@@ -28,17 +183,37 @@
     document.title = "# 태그 모음";
     if (indexTitle) indexTitle.textContent = "# 태그";
 
+    const titleTags = readTitleTags();
+
     root.innerHTML = `
+      <div class="tag-drag-actions" aria-label="태그 드래그 작업 영역">
+        <div class="tag-side-drop tag-side-drop-left">
+          <div class="tag-drop-zone tag-drop-delete" data-tag-drop-action="delete">
+            <strong>삭제</strong>
+            <span>태그를 여기로 끌면 전체 삭제</span>
+          </div>
+          <div class="tag-drop-zone tag-drop-unregister" data-tag-drop-action="unregister-title">
+            <strong>제목등록해제</strong>
+            <span>제목 표시만 해제</span>
+          </div>
+        </div>
+        <div class="tag-side-drop tag-side-drop-right">
+          <div class="tag-drop-zone tag-drop-register" data-tag-drop-action="register-title">
+            <strong>제목등록</strong>
+            <span>노래 제목 태그로 표시</span>
+          </div>
+        </div>
+      </div>
       <section class="tag-page-card">
         <h2># 태그 모음</h2>
-        <p class="tag-page-help">직접 넣은 태그들이 ㄱㄴㄷ 순으로 정리돼. 태그를 누르면 그 태그가 달린 노래/영상을 재생목록처럼 모아볼 수 있어.</p>
+        <p class="tag-page-help">직접 넣은 태그들이 ㄱㄴㄷ 순으로 정리돼. 태그를 누르면 그 태그가 달린 노래/영상을 재생목록처럼 모아볼 수 있어. 태그를 끌어서 왼쪽은 삭제, 오른쪽은 제목등록, 왼쪽 아래는 제목등록해제로 쓸 수 있어.</p>
         <div class="tag-cloud tag-index-cloud">
-          ${counts.length ? counts.map(([tag, count]) => `
-            <a class="tag-chip tag-index-chip" href="${tagPageUrl(tag)}">#${S.escapeHTML(tag)} <span class="tag-count">${count}</span></a>
-          `).join("") : `<p class="empty-center">아직 태그가 없어. 노래 페이지에서 태그를 먼저 넣어줘.</p>`}
+          ${counts.length ? counts.map(([tag, count]) => tagChipHTML(tag, count, titleTags)).join("") : `<p class="empty-center">아직 태그가 없어. 노래 페이지에서 태그를 먼저 넣어줘.</p>`}
         </div>
       </section>
     `;
+
+    bindTagDragActions(root);
   }
 
   function showTagPlayer(root, selected, taggedSongs) {

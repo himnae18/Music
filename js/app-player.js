@@ -769,10 +769,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (isShortcutTypingTarget(e.target)) return;
-    if (String(e.key || "").toLowerCase() !== "q") return;
 
-    const input = document.getElementById("yt");
-    if (!input) return;
+    const key = String(e.key || "").toLowerCase();
+    const inputId = key === "q" ? "yt" : key === "w" ? "tagInput" : "";
+    if (!inputId) return;
+
+    const input = document.getElementById(inputId);
+    if (!input || input.disabled) return;
     e.preventDefault();
     input.focus();
     input.select?.();

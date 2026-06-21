@@ -406,7 +406,7 @@ body.lyrics-open .lyrics-drawer{ transform:translateX(0); }
 .lyrics-head{ display:flex; align-items:center; justify-content:space-between; padding:14px 16px; border-bottom:1px solid #e6e6e6; background:#fff; }
 .lyrics-head-title{ font-weight:900; }
 .lyrics-close{ background:#333; }
-.lyrics-tabs{ display:flex; gap:10px; padding:10px 16px 6px; border-bottom:1px solid #e6e6e6; background:#fff; }
+.lyrics-tabs{ display:flex; flex-wrap:wrap; gap:10px; padding:10px 16px 6px; border-bottom:1px solid #e6e6e6; background:#fff; }
 .tab-link{
   flex:1;
   display:flex;
@@ -423,6 +423,14 @@ body.lyrics-open .lyrics-drawer{ transform:translateX(0); }
   cursor:pointer;
 }
 button.tab-link{ appearance:none; -webkit-appearance:none; border:1px solid #ddd; }
+body[data-store="jaSongs"] .lyrics-tabs .tab-link,
+body[data-store="cnSongs"] .lyrics-tabs .tab-link{
+  flex:1 1 calc(25% - 10px);
+  min-width:76px;
+  min-height:38px;
+  font-size:14px;
+}
+
 .tab-ready{ background:#f23b34; color:#fff; border-color:#f23b34; }
 .tab-active{ background:var(--main); color:#fff; border-color:var(--main); outline:4px solid rgba(132,82,238,.18); }
 .tab-disabled{ background:#eee; color:#999; border-color:#e3e3e3; pointer-events:none; opacity:0.95; }
@@ -1784,5 +1792,161 @@ body[data-page="tag"] .tag-tools .tag-tools-path-list::-webkit-scrollbar-thumb{
 @media (max-height:820px) and (min-width:721px){
   .music-page-layout .center-player-panel .player-wrap.player-portrait{
     width:min(390px, 88vw) !important;
+  }
+}
+
+/* 가사/메모 txt 드롭 + 다운로드 */
+.lyrics-editor-toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:0 0 8px;
+}
+.lyrics-editor-toolbar strong{
+  font-size:14px;
+  font-weight:900;
+  color:#222;
+}
+.lyrics-text-download-btn{
+  border:0;
+  border-radius:999px;
+  padding:8px 12px;
+  background:#111;
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.lyrics-text-download-btn:hover{ background:#333; }
+.lyrics-edit-textarea.is-dragover{
+  outline:3px dashed #111;
+  outline-offset:4px;
+  background:#fffdf3;
+}
+
+/* 태그 페이지: 태그 드래그 작업 영역 */
+.tag-drag-actions{
+  pointer-events:none;
+}
+.tag-side-drop{
+  position:fixed;
+  top:118px;
+  width:96px;
+  height:calc(100vh - 190px);
+  min-height:360px;
+  display:flex;
+  flex-direction:column;
+  gap:0;
+  z-index:30;
+  pointer-events:auto;
+  border-radius:0;
+  overflow:hidden;
+  box-shadow:0 8px 18px rgba(0,0,0,0.08);
+}
+.tag-side-drop-left{
+  left:max(18px, calc(50vw - 570px));
+}
+.tag-side-drop-right{
+  right:max(18px, calc(50vw - 570px));
+}
+.tag-drop-zone{
+  flex:1 1 auto;
+  min-height:0;
+  background:#9b9b9b;
+  color:#fff;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding:12px 8px;
+  text-align:center;
+  font-weight:900;
+  transition:background .15s ease, transform .15s ease, outline .15s ease;
+}
+.tag-drop-zone strong{
+  font-size:18px;
+  line-height:1.15;
+  word-break:keep-all;
+}
+.tag-drop-zone span{
+  font-size:11px;
+  line-height:1.35;
+  opacity:.92;
+  word-break:keep-all;
+}
+.tag-drop-unregister{
+  flex:0 0 29%;
+  background:#707070;
+  border-top:1px solid rgba(255,255,255,.3);
+}
+.tag-drop-unregister strong{
+  font-size:13px;
+}
+.tag-drop-unregister span{
+  font-size:10px;
+}
+.tag-drop-register{
+  background:#9b9b9b;
+}
+.tag-drop-zone.tag-drop-over{
+  background:var(--main);
+  outline:4px solid rgba(179,38,71,.22);
+  outline-offset:-4px;
+  transform:scale(1.02);
+}
+.tag-drop-zone.tag-drop-done{
+  background:#111;
+}
+.tag-index-chip[draggable="true"]{
+  cursor:grab;
+  user-select:none;
+}
+.tag-index-chip[draggable="true"]:active,
+.tag-index-chip.is-dragging{
+  cursor:grabbing;
+  opacity:.55;
+}
+.tag-index-chip.is-title-tag{
+  border-color:var(--main);
+  background:#fff4f7;
+}
+.tag-title-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:18px;
+  padding:0 6px;
+  border-radius:999px;
+  background:var(--main);
+  color:#fff;
+  font-size:11px;
+  font-weight:900;
+}
+@media (max-width:1120px){
+  .tag-side-drop{
+    position:static;
+    width:min(980px, 92%);
+    height:auto;
+    min-height:0;
+    margin:8px auto;
+    flex-direction:row;
+    border-radius:16px;
+  }
+  .tag-side-drop-left{
+    display:grid;
+    grid-template-columns:1fr .8fr;
+  }
+  .tag-side-drop-right{
+    margin-bottom:12px;
+  }
+  .tag-drop-zone{
+    min-height:74px;
+  }
+  .tag-drop-unregister{
+    border-top:0;
+    border-left:1px solid rgba(255,255,255,.3);
   }
 }

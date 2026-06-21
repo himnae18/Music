@@ -121,6 +121,10 @@
       ytUrl,
       id,
       lyrics: String(song.lyrics || "").trim(),
+      lyricsJa: String(song.lyricsJa || "").trim(),
+      lyricsCn: String(song.lyricsCn || "").trim(),
+      lyricsKr: String(song.lyricsKr || "").trim(),
+      lyricsEn: String(song.lyricsEn || "").trim(),
       mr: String(song.mr || "").trim(),
       score: String(song.score || "").trim(),
       original: String(song.original || song.origin || song.originalUrl || "").trim(),
@@ -155,19 +159,36 @@
     return merged;
   }
 
+  function removeLegacyStoreKeys(country) {
+    (country.old || []).forEach((oldKey) => {
+      try {
+        localStorage.removeItem(oldKey);
+      } catch {}
+    });
+  }
+
   function migrateUnifiedStores() {
     COUNTRY_STORES.forEach((country) => {
       const currentData = cleanSongArray(readStorage(country.key));
       const oldData = [];
-      country.old.forEach((oldKey) => {
+
+      (country.old || []).forEach((oldKey) => {
         const moodTag = country.mood?.[oldKey] || "";
         oldData.push(...cleanSongArray(readStorage(oldKey), moodTag));
       });
-      if (oldData.length > 0) {
-        const merged = mergeSongArrays([currentData, oldData]);
-        writeStorage(country.key, merged);
-      } else if (currentData.length > 0) {
+
+      // 예전 저장소를 매번 다시 합치면 삭제한 곡/태그가 새로고침 후 다시 살아나는 문제가 생긴다.
+      // 새 통합 저장소가 이미 있으면 예전 저장소는 재합치지 않고 정리한다.
+      // 새 통합 저장소가 비어있을 때만, 옛날 버전에서 넘어온 데이터를 1회 복구한다.
+      if (currentData.length > 0) {
         writeStorage(country.key, currentData);
+        removeLegacyStoreKeys(country);
+        return;
+      }
+
+      if (oldData.length > 0) {
+        writeStorage(country.key, mergeSongArrays([oldData]));
+        removeLegacyStoreKeys(country);
       }
     });
   }
@@ -373,7 +394,7 @@
 
     return {
       app: "my-music-library",
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       stores
     };

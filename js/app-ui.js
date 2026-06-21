@@ -183,6 +183,52 @@
   let activeTab = "lyrics";
   let editorLocked = localStorage.getItem("lyricsMemoEditorLocked") !== "unlocked";
 
+  const LYRICS_LANGUAGE_TABS = [
+    { tab: "lyricsJa", buttonId: "tabLyricsJa", field: "lyricsJa", label: "일본어" },
+    { tab: "lyricsCn", buttonId: "tabLyricsCn", field: "lyricsCn", label: "중국어" },
+    { tab: "lyricsKr", buttonId: "tabLyricsKr", field: "lyricsKr", label: "한국어" },
+    { tab: "lyricsEn", buttonId: "tabLyricsEn", field: "lyricsEn", label: "영어" }
+  ];
+  const LYRICS_LANGUAGE_FIELDS = LYRICS_LANGUAGE_TABS.map((item) => item.field);
+
+  function isLanguageLyricsPage() {
+    return ["jaSongs", "cnSongs"].includes(S.storeKey) && !isTagPage();
+  }
+
+  function defaultLanguageLyricsTab() {
+    if (S.storeKey === "cnSongs") return "lyricsCn";
+    return "lyricsJa";
+  }
+
+  function defaultLanguageLyricsField() {
+    const tab = LYRICS_LANGUAGE_TABS.find((item) => item.tab === defaultLanguageLyricsTab());
+    return tab?.field || "lyrics";
+  }
+
+  function getLanguageTabMeta(tab) {
+    return LYRICS_LANGUAGE_TABS.find((item) => item.tab === tab) || null;
+  }
+
+  function normalizeDrawerTab(tab) {
+    if (!isLanguageLyricsPage()) return tab === "lyrics" ? "lyrics" : tab;
+    if (tab === "lyrics") return defaultLanguageLyricsTab();
+    if (getLanguageTabMeta(tab) || tab === "mr" || tab === "original") return tab;
+    return defaultLanguageLyricsTab();
+  }
+
+  function setTabClass(el, className = "tab-link") {
+    if (el) el.className = className;
+  }
+
+  function getEditorText(song, field) {
+    if (!song) return "";
+    const value = song[field];
+    if (LYRICS_LANGUAGE_FIELDS.includes(field) && field === defaultLanguageLyricsField() && !value) {
+      return song.lyrics || "";
+    }
+    return value || "";
+  }
+
   function getLyricsLockButton() {
     let btn = document.getElementById("lyricsLockBtn");
     if (btn) return btn;
@@ -237,19 +283,108 @@
   }
 
   function setTab(tab) {
-    activeTab = tab;
+    activeTab = normalizeDrawerTab(tab);
     updateLyricsDrawer();
   }
 
-  function editorPanelHTML(song, field, placeholder) {
-    const value = S.escapeHTML(song?.[field] || "");
-    const label = field === "memo" ? "메모" : "가사";
+  function editorPanelHTML(song, field, placeholder, labelOverride = "") {
+    const value = S.escapeHTML(getEditorText(song, field));
+    const label = labelOverride || (field === "memo" ? "메모" : "가사");
+    const downloadLabel = field === "memo" ? "메모" : "가사";
     return `
       <section class="lyrics-edit-panel" aria-label="${label} 메모장">
+        <div class="lyrics-editor-toolbar">
+          <strong>${S.escapeHTML(label)}</strong>
+          <button id="downloadSongTextBtn" class="lyrics-text-download-btn" type="button" data-download-kind="${downloadLabel}">${downloadLabel} txt 다운로드</button>
+        </div>
         <textarea id="songTextEditor" class="lyrics-edit-textarea ${editorLocked ? "is-locked" : "is-unlocked"}" data-field="${field}" placeholder="${placeholder}" spellcheck="false" ${editorLocked ? "readonly" : ""}>${value}</textarea>
-        <p class="memo-save-help editor-lock-help">${editorLocked ? "잠금 상태야. 위의 잠금 버튼을 풀면 수정할 수 있어." : "수정 가능 상태야. 입력하면 바로 자동 저장돼."}</p>
+        <p class="memo-save-help editor-lock-help">${editorLocked ? "잠금 상태야. 위의 잠금 버튼을 풀면 수정할 수 있어. txt 파일/메모장 글은 여기에 끌어다 놓으면 바로 저장돼." : "수정 가능 상태야. 입력하거나 txt 파일/메모장 글을 끌어다 놓으면 바로 자동 저장돼."}</p>
       </section>
     `;
+  }
+
+  function getTextEditorField(editor) {
+    const rawField = editor?.dataset?.field || "lyrics";
+    const allowedFields = ["memo", "lyrics", ...LYRICS_LANGUAGE_FIELDS];
+    return allowedFields.includes(rawField) ? rawField : "lyrics";
+  }
+
+  function saveTextEditorValue(editor, options = {}) {
+    if (!editor) return false;
+    const songs = S.songs || [];
+    const s = songs[S.current];
+    const field = getTextEditorField(editor);
+    if (!s) return false;
+    s[field] = editor.value;
+    if (LYRICS_LANGUAGE_FIELDS.includes(field) && field === defaultLanguageLyricsField()) {
+      s.lyrics = editor.value;
+    }
+    S.save();
+    if (options.refreshTags && typeof renderTagTools === "function") renderTagTools();
+    return true;
+  }
+
+  function insertTextAtCursor(editor, text) {
+    if (!editor || !text) return;
+    editor.focus();
+
+    const start = Number.isFinite(editor.selectionStart) ? editor.selectionStart : editor.value.length;
+    const end = Number.isFinite(editor.selectionEnd) ? editor.selectionEnd : start;
+    const before = editor.value.slice(0, start);
+    const after = editor.value.slice(end);
+    editor.value = `${before}${text}${after}`;
+
+    const nextCursor = start + text.length;
+    try { editor.setSelectionRange(nextCursor, nextCursor); } catch {}
+    saveTextEditorValue(editor);
+  }
+
+  function readDroppedTextFile(file, onText) {
+    if (!file) return;
+    const name = String(file.name || "").toLowerCase();
+    const type = String(file.type || "").toLowerCase();
+    const looksText = name.endsWith(".txt") || type.startsWith("text/") || !type;
+
+    if (!looksText) {
+      alert("txt 파일이나 텍스트 파일만 넣을 수 있어.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => onText(String(reader.result || ""));
+    reader.onerror = () => alert("파일을 읽지 못했어. txt 파일인지 확인해줘.");
+    reader.readAsText(file, "utf-8");
+  }
+
+  function sanitizeFilenamePart(text) {
+    const cleaned = String(text || "제목 없음")
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return (cleaned || "제목 없음").slice(0, 100);
+  }
+
+  function downloadCurrentEditorText(editor) {
+    if (!editor) return;
+    const s = getCurrentSong();
+    if (!s) {
+      alert("먼저 노래를 하나 선택해줘.");
+      return;
+    }
+
+    saveTextEditorValue(editor);
+    const kind = getTextEditorField(editor) === "memo" ? "메모" : "가사";
+    const title = sanitizeFilenamePart(s.title || "제목 없음");
+    const filename = `${title}+${kind}.txt`;
+    const blob = new Blob(["\ufeff" + editor.value], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function bindTextEditorAutosave() {
@@ -259,13 +394,38 @@
     editor.readOnly = editorLocked;
     editor.addEventListener("input", () => {
       if (editorLocked) return;
-      const songs = S.songs || [];
-      const s = songs[S.current];
-      const field = editor.dataset.field === "memo" ? "memo" : "lyrics";
-      if (!s) return;
-      s[field] = editor.value;
-      S.save();
+      saveTextEditorValue(editor);
     });
+
+    editor.addEventListener("dragover", (e) => {
+      const dt = e.dataTransfer;
+      const hasFile = Array.from(dt?.types || []).includes("Files");
+      const hasText = Array.from(dt?.types || []).includes("text/plain");
+      if (!hasFile && !hasText) return;
+      e.preventDefault();
+      editor.classList.add("is-dragover");
+      if (dt) dt.dropEffect = "copy";
+    });
+
+    editor.addEventListener("dragleave", () => {
+      editor.classList.remove("is-dragover");
+    });
+
+    editor.addEventListener("drop", (e) => {
+      e.preventDefault();
+      editor.classList.remove("is-dragover");
+
+      const file = e.dataTransfer?.files?.[0];
+      if (file) {
+        readDroppedTextFile(file, (text) => insertTextAtCursor(editor, text));
+        return;
+      }
+
+      const text = e.dataTransfer?.getData("text/plain") || "";
+      if (text) insertTextAtCursor(editor, text);
+    });
+
+    document.getElementById("downloadSongTextBtn")?.addEventListener("click", () => downloadCurrentEditorText(editor));
   }
 
   function extraPanelHTML(song) {
@@ -391,33 +551,42 @@
     const tabLyrics = document.getElementById("tabLyrics");
     const tabMr = document.getElementById("tabMr");
     const tabOriginal = document.getElementById("tabOriginal");
+    const languageTabEls = LYRICS_LANGUAGE_TABS.map((item) => ({ ...item, el: document.getElementById(item.buttonId) }));
+    const hasLanguageTabs = isLanguageLyricsPage() && languageTabEls.every((item) => item.el);
     const headTitle = document.querySelector(".lyrics-head-title");
 
     getLyricsLockButton();
     updateLockUI();
     renderTagPlayerSummary();
 
-    if (!titleEl || !textEl || !mediaEl || !tabLyrics || !tabMr || !tabOriginal) return;
+    if (!titleEl || !textEl || !mediaEl || !tabMr || !tabOriginal || (!tabLyrics && !hasLanguageTabs)) return;
 
     const songs = S.songs || [];
     const s = songs[S.current];
 
-    tabLyrics.className = "tab-link";
-    tabMr.className = "tab-link";
-    tabOriginal.className = "tab-link";
+    setTabClass(tabLyrics);
+    setTabClass(tabMr);
+    setTabClass(tabOriginal);
+    languageTabEls.forEach((item) => setTabClass(item.el));
 
     if (!s) {
-      if (headTitle) headTitle.textContent = "가사 / 메모 / 기타";
+      if (headTitle) headTitle.textContent = hasLanguageTabs ? "일본어 / 중국어 / 한국어 / 영어" : "가사 / 메모 / 기타";
       const videoLikePage = isTagPage() || document.body?.dataset?.store?.startsWith("yt");
       titleEl.textContent = videoLikePage ? "재생중인 영상이 없어" : "재생중인 곡이 없어";
       if (tagEl) tagEl.innerHTML = "";
       textEl.textContent = videoLikePage
         ? "영상을 재생하면 여기서 설명/메모/기타 정보를 볼 수 있어."
-        : "노래를 재생하면 여기서 가사/메모/기타 정보를 볼 수 있어.";
+        : (hasLanguageTabs ? "노래를 재생하면 여기서 일본어/중국어/한국어/영어 가사를 나눠 적을 수 있어." : "노래를 재생하면 여기서 가사/메모/기타 정보를 볼 수 있어.");
       textEl.style.display = "block";
       mediaEl.style.display = "none";
       mediaEl.innerHTML = "";
-      tabLyrics.classList.add("tab-active");
+
+      if (hasLanguageTabs) {
+        const defaultTab = defaultLanguageLyricsTab();
+        languageTabEls.forEach((item) => item.el?.classList.add(item.tab === defaultTab ? "tab-active" : "tab-disabled-soft"));
+      } else {
+        tabLyrics?.classList.add("tab-active");
+      }
       tabMr.classList.add("tab-disabled-soft");
       tabOriginal.classList.add("tab-disabled-soft");
       return;
@@ -429,14 +598,19 @@
 
     tabMr.classList.add("tab-ready");
     tabOriginal.classList.add("tab-ready");
+    if (hasLanguageTabs) {
+      languageTabEls.forEach((item) => item.el?.classList.add("tab-ready"));
+    }
 
     textEl.style.display = "none";
     mediaEl.style.display = "block";
 
+    activeTab = normalizeDrawerTab(activeTab);
+
     if (activeTab === "mr") {
       if (headTitle) headTitle.textContent = "메모";
       tabMr.classList.add("tab-active");
-      mediaEl.innerHTML = editorPanelHTML(s, "memo", "여기에 메모를 적어줘. 쓰는 즉시 자동 저장돼.");
+      mediaEl.innerHTML = editorPanelHTML(s, "memo", "여기에 메모를 적어줘. 쓰는 즉시 자동 저장돼.", "메모");
       bindTextEditorAutosave();
       updateLockUI();
     } else if (activeTab === "original") {
@@ -445,16 +619,31 @@
       mediaEl.innerHTML = extraPanelHTML(s);
       bindOriginalPanel();
       updateLockUI();
+    } else if (hasLanguageTabs) {
+      const meta = getLanguageTabMeta(activeTab) || getLanguageTabMeta(defaultLanguageLyricsTab());
+      activeTab = meta?.tab || defaultLanguageLyricsTab();
+      const activeButton = meta?.el || document.getElementById(meta?.buttonId || "");
+      if (headTitle) headTitle.textContent = meta?.label || "가사";
+      activeButton?.classList.add("tab-active");
+      mediaEl.innerHTML = editorPanelHTML(
+        s,
+        meta?.field || defaultLanguageLyricsField(),
+        `여기에 ${meta?.label || "가사"} 가사를 적어줘. 쓰는 즉시 자동 저장돼.`,
+        meta?.label || "가사"
+      );
+      bindTextEditorAutosave();
+      updateLockUI();
     } else {
       activeTab = "lyrics";
       if (headTitle) headTitle.textContent = (isTagPage() || document.body?.dataset?.store?.startsWith("yt")) ? "설명" : "가사";
-      tabLyrics.classList.add("tab-active");
+      tabLyrics?.classList.add("tab-active");
       mediaEl.innerHTML = editorPanelHTML(
         s,
         "lyrics",
         (isTagPage() || document.body?.dataset?.store?.startsWith("yt"))
           ? "여기에 설명을 적어줘. 쓰는 즉시 자동 저장돼."
-          : "여기에 가사를 적어줘. 쓰는 즉시 자동 저장돼."
+          : "여기에 가사를 적어줘. 쓰는 즉시 자동 저장돼.",
+        (isTagPage() || document.body?.dataset?.store?.startsWith("yt")) ? "설명" : "가사"
       );
       bindTextEditorAutosave();
       updateLockUI();
@@ -575,7 +764,7 @@
 
   function openLyricsDrawer(tab = "lyrics") {
     document.body.classList.add("lyrics-open");
-    activeTab = tab;
+    activeTab = normalizeDrawerTab(tab);
     updateLyricsDrawer();
   }
 
@@ -587,7 +776,7 @@
     const willOpen = !document.body.classList.contains("lyrics-open");
     document.body.classList.toggle("lyrics-open");
     if (willOpen) {
-      activeTab = "lyrics";
+      activeTab = normalizeDrawerTab("lyrics");
       updateLyricsDrawer();
     }
   }
@@ -657,6 +846,9 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("tabLyrics")?.addEventListener("click", () => setTab("lyrics"));
+    LYRICS_LANGUAGE_TABS.forEach((item) => {
+      document.getElementById(item.buttonId)?.addEventListener("click", () => setTab(item.tab));
+    });
     document.getElementById("tabMr")?.addEventListener("click", () => setTab("mr"));
     document.getElementById("tabOriginal")?.addEventListener("click", () => setTab("original"));
     document.getElementById("btnDownload")?.addEventListener("click", copyCurrentVideoUrl);
