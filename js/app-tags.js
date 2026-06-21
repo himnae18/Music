@@ -153,10 +153,23 @@
     });
   }
 
-  function tagChipHTML(tag, count, titleTags) {
+  function tagCountBadgeStyle(count, maxCount) {
+    const safeCount = Math.max(1, Number(count) || 1);
+    const safeMax = Math.max(1, Number(maxCount) || 1);
+    const ratio = Math.min(1, Math.max(0, (safeCount - 1) / Math.max(1, safeMax - 1)));
+    const start = { r: 17, g: 17, b: 17 };
+    const end = { r: 228, g: 52, b: 52 };
+    const r = Math.round(start.r + (end.r - start.r) * ratio);
+    const g = Math.round(start.g + (end.g - start.g) * ratio);
+    const b = Math.round(start.b + (end.b - start.b) * ratio);
+    return `background:rgb(${r}, ${g}, ${b}); color:#fff;`;
+  }
+
+  function tagChipHTML(tag, count, titleTags, maxCount = 1) {
     const clean = S.normalizeTag(tag);
     const safe = S.escapeHTML(clean);
     const registered = titleTags.includes(clean);
+    const badgeStyle = tagCountBadgeStyle(count, maxCount);
     return `
       <a class="tag-chip tag-index-chip ${registered ? "is-title-tag" : ""}"
         href="${tagPageUrl(clean)}"
@@ -165,7 +178,7 @@
         title="드래그해서 왼쪽은 삭제, 오른쪽은 제목등록">
         #${safe}
         ${registered ? `<span class="tag-title-badge">제목</span>` : ""}
-        <span class="tag-count">${count}</span>
+        <span class="tag-count" style="${badgeStyle}">${count}</span>
       </a>
     `;
   }
@@ -208,7 +221,7 @@
         <h2># 태그 모음</h2>
         <p class="tag-page-help">직접 넣은 태그들이 ㄱㄴㄷ 순으로 정리돼. 태그를 누르면 그 태그가 달린 노래/영상을 재생목록처럼 모아볼 수 있어. 태그를 끌어서 왼쪽은 삭제, 오른쪽은 제목등록, 왼쪽 아래는 제목등록해제로 쓸 수 있어.</p>
         <div class="tag-cloud tag-index-cloud">
-          ${counts.length ? counts.map(([tag, count]) => tagChipHTML(tag, count, titleTags)).join("") : `<p class="empty-center">아직 태그가 없어. 노래 페이지에서 태그를 먼저 넣어줘.</p>`}
+          ${counts.length ? counts.map(([tag, count]) => tagChipHTML(tag, count, titleTags, counts[0]?.[1] || 1)).join("") : `<p class="empty-center">아직 태그가 없어. 노래 페이지에서 태그를 먼저 넣어줘.</p>`}
         </div>
       </section>
     `;

@@ -762,7 +762,7 @@
           <div id="currentSongTags" class="tag-cloud small">
             ${currentTags.length ? currentTags.map((tag) => `
               <span class="tag-edit-chip">
-                <a href="${S.getTagPageUrl(tag)}">#${S.escapeHTML(tag)} <b>${countryCounts.get(tag) || 1}</b></a>
+                <a href="${S.getTagPageUrl(tag)}">#${S.escapeHTML(tag)}</a>
                 <button type="button" data-remove-tag="${S.escapeHTML(tag)}" title="태그 삭제">×</button>
               </span>
             `).join("") : `<span class="tag-empty">현재 곡 태그 없음</span>`}

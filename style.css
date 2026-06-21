@@ -1070,6 +1070,7 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
   justify-content:flex-start;
   padding:8px 16px 0;
 }
+.lyrics-now-tags{ display:none !important; }
 .lyrics-now-tags:empty{ display:none; }
 .tag-page-card{
   width:min(980px, 92%);
@@ -1408,6 +1409,7 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
 .tag-tools #currentSongTags .tag-edit-chip{
   flex:0 0 auto;
 }
+.tag-tools #currentSongTags .tag-edit-chip b{ display:none; }
 .tag-tools #currentSongTags::-webkit-scrollbar{
   width:6px;
 }
