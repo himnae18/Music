@@ -157,11 +157,30 @@
     const safeCount = Math.max(1, Number(count) || 1);
     const safeMax = Math.max(1, Number(maxCount) || 1);
     const ratio = Math.min(1, Math.max(0, (safeCount - 1) / Math.max(1, safeMax - 1)));
-    const start = { r: 17, g: 17, b: 17 };
-    const end = { r: 228, g: 52, b: 52 };
-    const r = Math.round(start.r + (end.r - start.r) * ratio);
-    const g = Math.round(start.g + (end.g - start.g) * ratio);
-    const b = Math.round(start.b + (end.b - start.b) * ratio);
+
+    const stops = [
+      { at: 0, color: [37, 99, 235] },   // blue
+      { at: 0.25, color: [34, 197, 94] }, // green
+      { at: 0.5, color: [234, 179, 8] },  // yellow
+      { at: 0.75, color: [249, 115, 22] },// orange
+      { at: 1, color: [220, 38, 38] }     // red
+    ];
+
+    let left = stops[0];
+    let right = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i += 1) {
+      if (ratio >= stops[i].at && ratio <= stops[i + 1].at) {
+        left = stops[i];
+        right = stops[i + 1];
+        break;
+      }
+    }
+
+    const sectionSpan = Math.max(0.0001, right.at - left.at);
+    const sectionRatio = Math.min(1, Math.max(0, (ratio - left.at) / sectionSpan));
+    const r = Math.round(left.color[0] + (right.color[0] - left.color[0]) * sectionRatio);
+    const g = Math.round(left.color[1] + (right.color[1] - left.color[1]) * sectionRatio);
+    const b = Math.round(left.color[2] + (right.color[2] - left.color[2]) * sectionRatio);
     return `background:rgb(${r}, ${g}, ${b}); color:#fff;`;
   }
 

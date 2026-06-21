@@ -20,9 +20,10 @@
           노래
         </button>
         <div id="drawerSongGroup" class="drawer-link-group open">
-          <a class="drawer-menu-link" href="${pre}japan/jaindex.html"><span>일본곡</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}china/cnindex.html"><span>중국곡</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}korea/krindex.html"><span>한국곡</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}japan/jaindex.html"><span>일본어</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}china/cnindex.html"><span>중국어</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}korea/krindex.html"><span>한국어</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}english/enindex.html"><span>영어</span><span>›</span></a>
         </div>
       </div>
 

@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>유튜브 영상 4P</title>
+  <title>영어</title>
   <link rel="stylesheet" href="../style.css?v=20260621lyrics7" />
 </head>
-<body data-store="yt4pVideos">
+<body data-store="enSongs">
 <button id="hamburgerBtn" class="hamburger" type="button">☰</button>
 <div id="drawerOverlay" class="drawer-overlay"></div>
 <nav id="drawer" class="drawer" aria-label="메뉴"></nav>
 
-<button id="lyricsBtn" class="lyrics-toggle" title="메모/기타 패널" type="button">≡</button>
+<button id="lyricsBtn" class="lyrics-toggle" title="가사/메모/기타 패널" type="button">≡</button>
 
 <div id="mainContent">
   <div class="page-title-bar">
@@ -19,14 +19,14 @@
       <button id="btnHistoryBack" class="title-history-btn" type="button">되돌아가기</button>
       <button id="btnHistoryForward" class="title-history-btn" type="button">앞으로가기</button>
     </div>
-    <h1>📺 유튜브 영상 4P</h1>
+    <h1>🇺🇸 영어</h1>
   </div>
   <section id="tagTools" class="tag-tools" aria-label="태그 입력"></section>
 
   <div class="music-page-layout">
-    <aside class="left-library-panel" aria-label="영상 추가와 재생목록">
-      <section class="add-song-section" aria-label="영상 추가">
-        <h2>🎬 영상 추가</h2>
+    <aside class="left-library-panel" aria-label="노래 추가와 재생목록">
+      <section class="add-song-section" aria-label="노래 추가">
+        <h2>🎵 노래 추가</h2>
         <div class="add-song-row">
           <input id="yt" placeholder="유튜브 링크" />
           <button class="add-song-btn" type="button" onclick="addSong()">추가</button>
@@ -60,20 +60,20 @@
 
 <aside id="lyricsDrawer" class="lyrics-drawer">
   <div class="lyrics-head">
-    <div class="lyrics-head-title">메모</div>
+    <div class="lyrics-head-title">가사</div>
     <button id="lyricsCloseBtn" class="lyrics-close" type="button">✕</button>
   </div>
 
   <div class="lyrics-tabs">
-    <button id="tabLyrics" class="tab-link tab-active" type="button">설명</button>
+    <button id="tabLyrics" class="tab-link tab-active" type="button">가사</button>
     <button id="tabMr" class="tab-link tab-disabled" type="button">메모</button>
     <button id="tabOriginal" class="tab-link tab-disabled-soft" type="button">기타</button>
   </div>
 
-  <div id="lyricsNowTitle" class="lyrics-now-title">재생중인 영상이 없어</div>
+  <div id="lyricsNowTitle" class="lyrics-now-title">재생중인 곡이 없어</div>
   <div id="lyricsNowTags" class="lyrics-now-tags"></div>
   <div class="lyrics-body">
-    <pre id="lyricsNowText">영상을 재생하면 여기서 설명/메모를 볼 수 있어.</pre>
+    <pre id="lyricsNowText">노래를 재생하면 여기서 원어/발음/뜻 가사를 나눠 적을 수 있어.</pre>
     <div id="lyricsNowMedia" class="lyrics-media" style="display:none;"></div>
   </div>
 </aside>

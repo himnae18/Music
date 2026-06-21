@@ -3,9 +3,10 @@
   const storeKey = document.body?.dataset?.store || "main";
 
   const COUNTRY_STORES = [
-    { key: "jaSongs", label: "일본 노래", emoji: "🇯🇵", page: "japan/jaindex.html", old: ["jaBright", "jaMid", "jaDark", "jpBright", "jpMid", "jpDark"], mood: { jaBright: "밝은곡", jpBright: "밝은곡", jaMid: "중간곡", jpMid: "중간곡", jaDark: "어두운곡", jpDark: "어두운곡" } },
-    { key: "cnSongs", label: "중국 노래", emoji: "🇨🇳", page: "china/cnindex.html", old: ["cnBright", "cnMid", "cnDark"], mood: { cnBright: "밝은곡", cnMid: "중간곡", cnDark: "어두운곡" } },
-    { key: "krSongs", label: "한국 노래", emoji: "🇰🇷", page: "korea/krindex.html", old: ["krBright", "krMid", "krDark"], mood: { krBright: "밝은곡", krMid: "중간곡", krDark: "어두운곡" } }
+    { key: "jaSongs", label: "일본어", emoji: "🇯🇵", page: "japan/jaindex.html", old: ["jaBright", "jaMid", "jaDark", "jpBright", "jpMid", "jpDark"], mood: { jaBright: "밝은곡", jpBright: "밝은곡", jaMid: "중간곡", jpMid: "중간곡", jaDark: "어두운곡", jpDark: "어두운곡" } },
+    { key: "cnSongs", label: "중국어", emoji: "🇨🇳", page: "china/cnindex.html", old: ["cnBright", "cnMid", "cnDark"], mood: { cnBright: "밝은곡", cnMid: "중간곡", cnDark: "어두운곡" } },
+    { key: "krSongs", label: "한국어", emoji: "🇰🇷", page: "korea/krindex.html", old: ["krBright", "krMid", "krDark"], mood: { krBright: "밝은곡", krMid: "중간곡", krDark: "어두운곡" } },
+    { key: "enSongs", label: "영어", emoji: "🇺🇸", page: "english/enindex.html", old: [], mood: {} }
   ];
 
   const YOUTUBE_STORES = [
