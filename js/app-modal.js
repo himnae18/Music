@@ -41,6 +41,7 @@
     `;
 
     modal.classList.add("open");
+    window.AppState?.attachTagAutocomplete?.(document.getElementById("editTags"));
     document.getElementById("saveEditBtn")?.addEventListener("click", saveEditModal);
     document.getElementById("cancelEditBtn")?.addEventListener("click", closeEditModal);
   }
@@ -60,6 +61,8 @@
       return;
     }
 
+    const editedTags = normalizeTags(document.getElementById("editTags")?.value);
+    window.AppState?.ensureTagKinds?.(editedTags, "song");
     songs[current] = {
       ...songs[current],
       title: safeText(document.getElementById("editTitle")?.value) || "제목 없음",
@@ -68,8 +71,9 @@
       id,
       mr: safeLink(document.getElementById("editMr")?.value),
       original: safeLink(document.getElementById("editOriginal")?.value),
-      tags: window.AppState?.applyTitleFixedTagsToTags ? window.AppState.applyTitleFixedTagsToTags(normalizeTags(document.getElementById("editTags")?.value)) : normalizeTags(document.getElementById("editTags")?.value)
+      tags: window.AppState?.applyTitleFixedTagsToTags ? window.AppState.applyTitleFixedTagsToTags(editedTags) : editedTags
     };
+    window.AppState?.ensureTagKinds?.(songs[current].tags, "song");
 
     if (window.AppState?.setSharedTextForSong) {
       window.AppState.setSharedTextForSong(songs[current], "original", songs[current].original);

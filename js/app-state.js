@@ -20,7 +20,17 @@
   const TITLE_TAGS_KEY = "musicTitleTags";
   const TITLE_SHARED_TEXT_KEY = "musicTitleSharedLyrics";
   const TITLE_FIXED_TAGS_KEY = "musicTitleFixedTags";
+  const TAG_KINDS_KEY = "musicTagKinds";
+  const PLAYLIST_TAGS_KEY = "musicPlaylistTags";
   const TITLE_SHARED_TEXT_FIELDS = ["lyrics", "lyricsOriginal", "lyricsPronunciation", "lyricsMeaning", "memo", "original"];
+  const TAG_KIND_OPTIONS = [
+    { key: "song", label: "노래전용" },
+    { key: "lecture", label: "강의전용" },
+    { key: "general", label: "일반(유머)" },
+    { key: "pretty", label: "이쁜거(뮤비/일러)" },
+    { key: "other", label: "기타" },
+    { key: "playlist", label: "재생목록 태그" }
+  ];
 
   function readStorage(key) {
     try {
@@ -395,6 +405,261 @@
     return true;
   }
 
+
+  function normalizeTagKind(kind) {
+    const clean = String(kind || "").trim();
+    return TAG_KIND_OPTIONS.some((item) => item.key === clean) ? clean : "";
+  }
+
+  function getTagKindLabel(kind) {
+    if (kind === "title") return "제목태그";
+    return TAG_KIND_OPTIONS.find((item) => item.key === kind)?.label || "노래전용";
+  }
+
+  function readTagKinds() {
+    try {
+      const data = JSON.parse(localStorage.getItem(TAG_KINDS_KEY) || "{}");
+      if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+      const result = {};
+      Object.entries(data).forEach(([rawTag, rawKind]) => {
+        const tag = normalizeTag(rawTag);
+        const kind = normalizeTagKind(rawKind);
+        if (tag && kind) result[tag] = kind;
+      });
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  function writeTagKinds(data) {
+    const result = {};
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      Object.entries(data).forEach(([rawTag, rawKind]) => {
+        const tag = normalizeTag(rawTag);
+        const kind = normalizeTagKind(rawKind);
+        if (tag && kind) result[tag] = kind;
+      });
+    }
+    localStorage.setItem(TAG_KINDS_KEY, JSON.stringify(result));
+  }
+
+  function getTagKind(tag) {
+    const clean = normalizeTag(tag);
+    if (!clean) return "song";
+    if (isTitleTag(clean)) return "title";
+    const kind = normalizeTagKind(readTagKinds()[clean]);
+    return kind || "song";
+  }
+
+  function setTagKind(tag, kind) {
+    const clean = normalizeTag(tag);
+    const cleanKind = normalizeTagKind(kind) || "song";
+    if (!clean) return false;
+    const data = readTagKinds();
+    data[clean] = cleanKind;
+    writeTagKinds(data);
+    return true;
+  }
+
+  function ensureTagKinds(tags, defaultKind = "song") {
+    const cleanTags = normalizeTags(tags);
+    if (cleanTags.length === 0) return false;
+    const cleanKind = normalizeTagKind(defaultKind) || "song";
+    const titleSet = new Set(readTitleTags());
+    const data = readTagKinds();
+    let changed = false;
+    cleanTags.forEach((tag) => {
+      if (!tag || titleSet.has(tag)) return;
+      if (!normalizeTagKind(data[tag])) {
+        data[tag] = cleanKind;
+        changed = true;
+      }
+    });
+    if (changed) writeTagKinds(data);
+    return changed;
+  }
+
+  function readPlaylistTags() {
+    try {
+      const data = JSON.parse(localStorage.getItem(PLAYLIST_TAGS_KEY) || "[]");
+      return normalizeTags(Array.isArray(data) ? data : []);
+    } catch {
+      return [];
+    }
+  }
+
+  function writePlaylistTags(tags) {
+    localStorage.setItem(PLAYLIST_TAGS_KEY, JSON.stringify(normalizeTags(tags)));
+  }
+
+  function registerPlaylistTag(tag) {
+    const clean = normalizeTag(tag);
+    if (!clean) return false;
+    writePlaylistTags(addTags(readPlaylistTags(), [clean]));
+    setTagKind(clean, "playlist");
+    return true;
+  }
+
+  function unregisterPlaylistTag(tag) {
+    const clean = normalizeTag(tag);
+    if (!clean) return false;
+    writePlaylistTags(readPlaylistTags().filter((item) => item !== clean));
+    const data = readTagKinds();
+    if (data[clean] === "playlist") {
+      delete data[clean];
+      writeTagKinds(data);
+    }
+    return true;
+  }
+
+  function isPlaylistTag(tag) {
+    const clean = normalizeTag(tag);
+    return !!clean && readPlaylistTags().includes(clean);
+  }
+
+  function titleHasSharedText(tag) {
+    const record = getTitleSharedRecord(tag);
+    return TITLE_SHARED_TEXT_FIELDS.some((field) => String(record[field] ?? "").trim());
+  }
+
+  function getAllKnownTags() {
+    const set = new Set();
+    getTagCounts("all").forEach(([tag]) => set.add(normalizeTag(tag)));
+    readTitleTags().forEach((tag) => set.add(normalizeTag(tag)));
+    readPlaylistTags().forEach((tag) => set.add(normalizeTag(tag)));
+    Object.keys(readTagKinds()).forEach((tag) => set.add(normalizeTag(tag)));
+    return [...set].filter(Boolean).sort((a, b) => a.localeCompare(b, "ko"));
+  }
+
+  function tagMatchesSearch(tag, query) {
+    const clean = normalizeTag(tag);
+    const terms = getSearchTerms(query);
+    if (!terms.length) return true;
+    const kindText = getTagKindLabel(getTagKind(clean));
+    const haystack = normalizeSearchText(`#${clean} ${clean} ${kindText}`);
+    return terms.every((term) => haystack.includes(term));
+  }
+
+  function searchTags(query) {
+    const counts = new Map(getTagCounts("all"));
+    return getAllKnownTags()
+      .filter((tag) => tagMatchesSearch(tag, query))
+      .map((tag) => {
+        const kind = getTagKind(tag);
+        return {
+          tag,
+          count: counts.get(tag) || 0,
+          kind,
+          kindLabel: getTagKindLabel(kind),
+          isTitle: isTitleTag(tag),
+          isPlaylist: isPlaylistTag(tag)
+        };
+      });
+  }
+
+  function attachTagAutocomplete(input, options = {}) {
+    if (!input || input.dataset.tagAutocompleteBound === "1") return;
+    input.dataset.tagAutocompleteBound = "1";
+    input.setAttribute("autocomplete", "off");
+
+    const max = Number(options.max || 8);
+    const dropdown = document.createElement("div");
+    dropdown.className = "tag-autocomplete-list";
+    dropdown.hidden = true;
+    input.insertAdjacentElement("afterend", dropdown);
+
+    function currentToken() {
+      const value = String(input.value || "");
+      const beforeCursor = value.slice(0, input.selectionStart ?? value.length);
+      const parts = beforeCursor.split(/[#,，、\n\t ]+/);
+      return normalizeTag(parts[parts.length - 1] || value);
+    }
+
+    function replaceCurrentToken(tag) {
+      const clean = normalizeTag(tag);
+      if (!clean) return;
+      const value = String(input.value || "");
+      const cursor = input.selectionStart ?? value.length;
+      const before = value.slice(0, cursor);
+      const after = value.slice(cursor);
+      const match = before.match(/^(.*?)([#]?[^#,，、\n\t ]*)$/);
+      const prefix = match ? match[1] : "";
+      const tail = after.replace(/^[^#,，、\n\t ]*/, "");
+      const sep = prefix.trim() ? ", " : "";
+      input.value = `${prefix}${sep}#${clean}${tail ? tail : ", "}`;
+      input.focus();
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      if (typeof options.onPick === "function") options.onPick(clean, input);
+    }
+
+    function hide() {
+      dropdown.hidden = true;
+      dropdown.innerHTML = "";
+    }
+
+    function render() {
+      const query = currentToken();
+      if (!query) {
+        hide();
+        return;
+      }
+      const exclude = new Set(normalizeTags(options.exclude || []));
+      const candidates = searchTags(query)
+        .filter((item) => !exclude.has(item.tag))
+        .slice(0, max);
+      if (candidates.length === 0) {
+        hide();
+        return;
+      }
+      dropdown.innerHTML = candidates.map((item) => `
+        <button type="button" class="tag-autocomplete-item" data-tag-autocomplete-pick="${escapeHTML(item.tag)}">
+          <span>#${escapeHTML(item.tag)}</span>
+          <small>${escapeHTML(item.kindLabel)}${item.count ? ` · ${item.count}` : ""}</small>
+        </button>
+      `).join("");
+      dropdown.hidden = false;
+    }
+
+    dropdown.addEventListener("mousedown", (e) => {
+      const btn = e.target.closest("[data-tag-autocomplete-pick]");
+      if (!btn) return;
+      e.preventDefault();
+      replaceCurrentToken(btn.getAttribute("data-tag-autocomplete-pick") || "");
+      hide();
+    });
+
+    input.addEventListener("input", render);
+    input.addEventListener("focus", render);
+    input.addEventListener("blur", () => setTimeout(hide, 120));
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") hide();
+      if (e.key !== "ArrowDown" || dropdown.hidden) return;
+      e.preventDefault();
+      dropdown.querySelector("button")?.focus();
+    });
+    dropdown.addEventListener("keydown", (e) => {
+      const buttons = [...dropdown.querySelectorAll("button")];
+      const idx = buttons.indexOf(document.activeElement);
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        buttons[Math.min(buttons.length - 1, idx + 1)]?.focus();
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (idx <= 0) input.focus();
+        else buttons[idx - 1]?.focus();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        const tag = document.activeElement?.getAttribute("data-tag-autocomplete-pick") || "";
+        replaceCurrentToken(tag);
+        hide();
+      } else if (e.key === "Escape") {
+        hide();
+        input.focus();
+      }
+    });
+  }
+
   function cleanSong(song, extraTag = "") {
     if (!song || typeof song !== "object") return null;
     const ytUrl = String(song.ytUrl || song.url || "").trim();
@@ -418,6 +683,9 @@
       ? String(song.lyricsTranslation || song.lyricsKrMeaning || "")
       : String(song.lyricsMeaning);
 
+    const cleanTags = applyTitleFixedTagsToTags(addTags(song.tags, extraTag));
+    ensureTagKinds(cleanTags, "song");
+
     return {
       title,
       author: String(song.author || "").trim(),
@@ -435,7 +703,7 @@
       score: String(song.score || "").trim(),
       original: String(song.original || song.origin || song.originalUrl || "").trim(),
       memo: String(song.memo || ""),
-      tags: applyTitleFixedTagsToTags(addTags(song.tags, extraTag)),
+      tags: cleanTags,
       aspect,
       thumbnailWidth,
       thumbnailHeight
@@ -599,7 +867,9 @@
     if (!cleanUrl || !id) return { ok: false, error: "유튜브 링크가 올바르지 않아." };
 
     const meta = await fetchYouTubeMeta(cleanUrl);
+    ensureTagKinds(tags, "song");
     const finalTags = applyTitleFixedTagsToTags(tags);
+    ensureTagKinds(finalTags, "song");
     const arr = cleanSongArray(readStorage(targetStore.key));
     const foundIndex = arr.findIndex((song) => {
       const songId = song.id || extractID(song.ytUrl);
@@ -692,6 +962,7 @@
     COUNTRY_STORES,
     YOUTUBE_STORES,
     ALL_STORES,
+    TAG_KIND_OPTIONS,
     readStorage,
     writeStorage,
     save,
@@ -713,6 +984,21 @@
     isTitleTag,
     registerTitleTag,
     unregisterTitleTag,
+    readTagKinds,
+    writeTagKinds,
+    getTagKind,
+    getTagKindLabel,
+    setTagKind,
+    ensureTagKinds,
+    readPlaylistTags,
+    writePlaylistTags,
+    registerPlaylistTag,
+    unregisterPlaylistTag,
+    isPlaylistTag,
+    titleHasSharedText,
+    getAllKnownTags,
+    searchTags,
+    attachTagAutocomplete,
     readTitleFixedTags,
     writeTitleFixedTags,
     getTitleFixedTags,
@@ -783,11 +1069,13 @@
 
     return {
       app: "my-music-library",
-      version: 5,
+      version: 6,
       exportedAt: new Date().toISOString(),
       titleTags: typeof S.readTitleTags === "function" ? S.readTitleTags() : [],
       titleSharedLyrics: typeof S.readTitleSharedText === "function" ? S.readTitleSharedText() : {},
       titleFixedTags: typeof S.readTitleFixedTags === "function" ? S.readTitleFixedTags() : {},
+      tagKinds: typeof S.readTagKinds === "function" ? S.readTagKinds() : {},
+      playlistTags: typeof S.readPlaylistTags === "function" ? S.readPlaylistTags() : [],
       stores
     };
   }
@@ -901,6 +1189,12 @@
           if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "titleFixedTags") && typeof S.writeTitleFixedTags === "function") {
             S.writeTitleFixedTags(data.titleFixedTags);
           }
+          if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "tagKinds") && typeof S.writeTagKinds === "function") {
+            S.writeTagKinds(data.tagKinds);
+          }
+          if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "playlistTags") && typeof S.writePlaylistTags === "function") {
+            S.writePlaylistTags(data.playlistTags);
+          }
           if (typeof S.applyTitleFixedTagsToStores === "function") S.applyTitleFixedTagsToStores();
 
           alert("불러오기 완료! 목록이 복원됐어.");
@@ -962,6 +1256,20 @@
     return `<div class="main-search-tags">${tags.map((tag) => `<span class="main-search-tag">#${escapeHTML(tag)}</span>`).join("")}</div>`;
   }
 
+  function mainTagResultsHTML(query) {
+    const tagResults = typeof S.searchTags === "function" ? S.searchTags(query).slice(0, 12) : [];
+    if (!tagResults.length) return "";
+    return tagResults.map((item) => `
+      <a class="main-search-item main-search-tag-item" href="tag.html?tag=${encodeURIComponent(item.tag)}">
+        <div class="main-search-meta">
+          <div class="main-search-title">#${escapeHTML(item.tag)}</div>
+          <div class="main-search-sub">${escapeHTML(item.kindLabel)}${item.count ? ` · 영상 ${item.count}개` : " · 아직 영상 없음"}</div>
+        </div>
+        <span class="main-search-open">태그 열기</span>
+      </a>
+    `).join("");
+  }
+
   function renderMainSearchResults(query) {
     const resultBox = document.getElementById("mainSearchResults");
     const summary = document.getElementById("mainSearchSummary");
@@ -976,15 +1284,17 @@
     }
 
     const results = searchSongs(text, "all");
-    summary.textContent = `${results.length}개 찾았어.`;
+    const tagHTML = mainTagResultsHTML(text);
+    const tagCount = typeof S.searchTags === "function" ? S.searchTags(text).length : 0;
+    summary.textContent = `태그 ${tagCount}개 / 영상 ${results.length}개 찾았어.`;
     resultBox.hidden = false;
 
-    if (!results.length) {
+    if (!results.length && !tagHTML) {
       resultBox.innerHTML = `<p class="empty-center main-search-empty">검색 결과가 없어.</p>`;
       return;
     }
 
-    resultBox.innerHTML = results.map((song) => {
+    const songHTML = results.map((song) => {
       const badge = `${song?.collection?.emoji || ""} ${song?.collection?.label || ""}`.trim();
       const sub = [safeText(song?.author), badge].filter(Boolean).join(" · ");
       return `
@@ -998,6 +1308,7 @@
         </a>
       `;
     }).join("");
+    resultBox.innerHTML = `${tagHTML}${songHTML}`;
   }
 
   function createMainSearchUI() {
