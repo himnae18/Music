@@ -358,11 +358,19 @@
       openTagVideoModal(clean);
     });
     if (input) {
-      input.onkeydown = (e) => {
-        if (e.key !== "Enter" || e.isComposing) return;
+      // 한글 입력 중 Enter를 눌러도 바로 "추가" 버튼을 누른 것처럼 동작하게 처리.
+      let enterAddTimer = null;
+      const runEnterAdd = (e) => {
+        if (e.key !== "Enter") return;
         e.preventDefault();
-        addInputTag();
+        if (enterAddTimer) clearTimeout(enterAddTimer);
+        enterAddTimer = setTimeout(() => {
+          enterAddTimer = null;
+          addInputTag();
+        }, e.isComposing ? 30 : 0);
       };
+      input.onkeydown = runEnterAdd;
+      input.onkeyup = runEnterAdd;
     }
 
     renderTemp();
