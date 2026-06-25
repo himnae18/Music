@@ -2,7 +2,7 @@
 (() => {
   function prefix() {
     const p = location.pathname;
-    return (p.includes('/japan/') || p.includes('/china/') || p.includes('/korea/') || p.includes('/english/') || p.includes('/youtube/')) ? '../' : '';
+    return (p.includes('/japan/') || p.includes('/china/') || p.includes('/korea/') || p.includes('/english/') || p.includes('/bgm/') || p.includes('/youtube/')) ? '../' : '';
   }
 
   function renderDrawer() {
@@ -24,6 +24,7 @@
           <a class="drawer-menu-link" href="${pre}china/cnindex.html"><span>중국어</span><span>›</span></a>
           <a class="drawer-menu-link" href="${pre}korea/krindex.html"><span>한국어</span><span>›</span></a>
           <a class="drawer-menu-link" href="${pre}english/enindex.html"><span>영어</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}bgm/bgmindex.html"><span>브금</span><span>›</span></a>
         </div>
       </div>
 
