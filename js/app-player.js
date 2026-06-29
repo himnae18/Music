@@ -675,6 +675,19 @@ function ensurePlayerReady(cb) {
   }
 }
 
+function ensureTopTrackNavButtons() {
+  const titleBar = document.querySelector(".page-title-bar");
+  if (!titleBar || document.getElementById("btnPrevTrack")) return;
+
+  const nav = document.createElement("div");
+  nav.className = "title-track-nav";
+  nav.innerHTML = `
+    <button id="btnPrevTrack" class="title-track-btn" type="button" aria-label="이전 노래">&lt;</button>
+    <button id="btnNextTrack" class="title-track-btn" type="button" aria-label="다음 노래">&gt;</button>
+  `;
+  titleBar.appendChild(nav);
+}
+
 function play(i, options = {}) {
   const nextIndex = Number(i);
   if (!Number.isFinite(nextIndex) || !songs[nextIndex] || !songs[nextIndex].id) return;
@@ -892,6 +905,7 @@ function isShortcutTypingTarget(target) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  ensureTopTrackNavButtons();
   const ytInput = document.getElementById("yt");
 
   ytInput?.addEventListener("keydown", (e) => {
@@ -1002,6 +1016,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   qs("btnHistoryBack")?.addEventListener("click", goBackSong);
   qs("btnHistoryForward")?.addEventListener("click", goForwardSong);
+  qs("btnPrevTrack")?.addEventListener("click", previousSong);
+  qs("btnNextTrack")?.addEventListener("click", nextSong);
 
   qs("btnEdit")?.addEventListener("click", () => openEditModal());
 
@@ -1025,6 +1041,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+function previousSong() {
+  if (!songs.length) return;
+  const prev = (current - 1 + songs.length) % songs.length;
+  play(prev);
+}
+
 function nextSong() {
   playNextSequential();
 }
@@ -1034,6 +1056,7 @@ function randomSong() {
 }
 
 window.goBackSong = goBackSong;
+window.previousSong = previousSong;
 window.goForwardSong = goForwardSong;
 window.changePlayerPlaybackRate = changePlayerPlaybackRate;
 window.resetPlayerPlaybackRate = resetPlayerPlaybackRate;

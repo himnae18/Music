@@ -39,7 +39,7 @@ h1{ margin-top:22px; }
   align-items:center;
   justify-content:center;
   padding-left:170px;
-  padding-right:16px;
+  padding-right:112px;
 }
 .page-title-bar h1{
   margin:0;
@@ -71,17 +71,56 @@ h1{ margin-top:22px; }
   cursor:not-allowed;
   box-shadow:none;
 }
+.title-track-nav{
+  position:absolute;
+  right:12px;
+  top:50%;
+  transform:translateY(-50%);
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.title-track-btn{
+  min-width:36px;
+  height:36px;
+  padding:0 10px;
+  border-radius:999px;
+  background:#fff;
+  border:1px solid #dedede;
+  color:#b32647;
+  font-size:20px;
+  font-weight:900;
+  line-height:1;
+  box-shadow:0 2px 8px rgba(0,0,0,.06);
+}
+.title-track-btn:hover{
+  background:#fff4f8;
+  border-color:#efc6d4;
+}
+.title-track-btn:disabled{
+  background:#f4f4f4 !important;
+  color:#a8a8a8 !important;
+  border-color:#e1e1e1 !important;
+  box-shadow:none;
+  cursor:not-allowed;
+}
 
 @media (max-width:760px){
   .page-title-bar{
     min-height:auto;
     padding-top:44px;
     padding-left:16px;
+    padding-right:16px;
   }
   .title-history-buttons{
     left:50%;
     top:0;
     transform:translateX(-50%);
+  }
+  .title-track-nav{
+    right:12px;
+    top:0;
+    transform:none;
   }
 }
 h2{ margin-top:28px; }
@@ -2144,7 +2183,7 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
   padding:0 18px;
   border:1px solid #c8c8c8;
   border-radius:8px;
-  background:#f5f5f5;
+  background:#ffffff;
   color:#111;
   font-weight:900;
   font-size:14px;
@@ -2152,12 +2191,22 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
   appearance:none;
   -webkit-appearance:none;
   box-shadow:none;
+  transition:background-color .15s ease, border-color .15s ease, color .15s ease, filter .15s ease;
+}
+.lyrics-sub-tab.has-content{
+  background:#fde7ef;
+  border-color:#f5cad8;
 }
 .lyrics-sub-tab.is-active{
-  background:#bfbfbf;
+  background:#ffffff;
   color:#111;
-  border-color:#a7a7a7;
+  border-color:#c8c8c8;
   box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);
+}
+.lyrics-sub-tab.has-content.is-active{
+  background:#e48faa;
+  border-color:#cf6f90;
+  color:#111;
 }
 .lyrics-sub-tab:hover{
   filter:brightness(.98);

@@ -498,6 +498,9 @@
     const list = document.getElementById("list");
     if (!list) return;
 
+    const previousPlaylist = list.querySelector(".playlist");
+    const previousScrollTop = previousPlaylist ? previousPlaylist.scrollTop : 0;
+
     const songs = S.songs || [];
     if (songs.length === 0) {
       list.innerHTML = `<p class="empty-center">아직 추가된 노래가 없어!</p>`;
@@ -563,6 +566,9 @@
 
     html += `</div>`;
     list.innerHTML = html;
+
+    const nextPlaylist = list.querySelector(".playlist");
+    if (nextPlaylist) nextPlaylist.scrollTop = previousScrollTop;
   }
 
   let activeTab = "lyrics";
@@ -716,12 +722,20 @@
     `;
   }
 
-  function lyricsSubTabsHTML() {
+  function hasLyricsSubTabContent(song, item) {
+    return Boolean(getEditorText(song, item.field).trim());
+  }
+
+  function lyricsSubTabsHTML(song) {
     return `
       <div class="lyrics-sub-tabs" aria-label="가사 세부 탭">
-        ${LYRICS_SUB_TABS.map((item) => `
-          <button class="lyrics-sub-tab ${normalizeLyricsSubTab(activeLyricsSubTab) === item.key ? "is-active" : ""}" type="button" data-lyrics-subtab="${S.escapeHTML(item.key)}">${S.escapeHTML(item.label)}</button>
-        `).join("")}
+        ${LYRICS_SUB_TABS.map((item) => {
+          const activeClass = normalizeLyricsSubTab(activeLyricsSubTab) === item.key ? "is-active" : "";
+          const filledClass = hasLyricsSubTabContent(song, item) ? "has-content" : "";
+          return `
+            <button class="lyrics-sub-tab ${activeClass} ${filledClass}" type="button" data-lyrics-subtab="${S.escapeHTML(item.key)}">${S.escapeHTML(item.label)}</button>
+          `;
+        }).join("")}
       </div>
     `;
   }
@@ -744,7 +758,7 @@
     const item = getActiveLyricsSubTabItem();
     return `
       <section class="lyrics-triple-panel" aria-label="가사 원어 발음 뜻">
-        ${lyricsSubTabsHTML()}
+        ${lyricsSubTabsHTML(song)}
         ${lyricsSinglePartPanelHTML(song, item)}
         <p class="memo-save-help editor-lock-help">${editorLocked ? "잠금 상태야. 위의 잠금 버튼을 풀면 수정할 수 있어. txt 파일/메모장 글은 현재 탭 칸에 끌어다 놓으면 바로 저장돼." : "수정 가능 상태야. 현재 탭에 입력하거나 txt 파일을 끌어다 놓으면 바로 자동 저장돼."}</p>
       </section>
@@ -766,6 +780,7 @@
     s[field] = editor.value;
     if (typeof S.setSharedTextForSong === "function") S.setSharedTextForSong(s, field, editor.value);
     S.save();
+    refreshLyricsSubTabState();
     if (options.refreshTags && typeof renderTagTools === "function") renderTagTools();
     return true;
   }
@@ -870,9 +885,23 @@
     makeTextDownload(`${title}+가사.txt`, parts);
   }
 
+  function refreshLyricsSubTabState() {
+    const song = getCurrentSong();
+    document.querySelectorAll("[data-lyrics-subtab]").forEach((btn) => {
+      const key = normalizeLyricsSubTab(btn.getAttribute("data-lyrics-subtab") || "lyrics");
+      const item = LYRICS_SUB_TABS.find((entry) => entry.key === key);
+      const hasContent = item ? hasLyricsSubTabContent(song, item) : false;
+      btn.classList.toggle("is-active", normalizeLyricsSubTab(activeLyricsSubTab) === key);
+      btn.classList.toggle("has-content", hasContent);
+    });
+  }
+
   function bindLyricsSubTabs() {
     document.querySelectorAll("[data-lyrics-subtab]").forEach((btn) => {
-      btn.addEventListener("click", () => setLyricsSubTab(btn.getAttribute("data-lyrics-subtab") || "lyrics"));
+      btn.addEventListener("click", () => {
+        setLyricsSubTab(btn.getAttribute("data-lyrics-subtab") || "lyrics");
+        refreshLyricsSubTabState();
+      });
     });
   }
 
