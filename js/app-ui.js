@@ -1313,6 +1313,17 @@
   function onDrop(e, dropIndex) {
     e.preventDefault();
 
+    // 5P 보관함의 영상을 재생목록 항목 위에 놓았을 때는
+    // 일반 목록 순서 변경보다 먼저 "현재 페이지로 이동"으로 처리한다.
+    // 추가가 성공한 뒤 removeFromFiveP 옵션으로 5P 원본도 함께 제거한다.
+    const fivePSong = readFivePTransfer(e);
+    if (fivePSong) {
+      e.stopPropagation();
+      S.dragIndex = null;
+      copyFivePSongToCurrentPage(fivePSong, { removeFromFiveP: true });
+      return;
+    }
+
     const tag = S.normalizeTag ? S.normalizeTag(e.dataTransfer?.getData("application/x-music-tag") || "") : "";
     if (tag) {
       addDraggedTagToSong(tag, dropIndex);
