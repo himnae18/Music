@@ -40,6 +40,7 @@
           <a class="drawer-menu-link" href="${pre}youtube/3p.html"><span>3P</span><span>›</span></a>
           <a class="drawer-menu-link" href="${pre}youtube/4p.html"><span>4P</span><span>›</span></a>
           <a class="drawer-menu-link" href="${pre}youtube/5p.html"><span>5P</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}youtube/6p.html"><span>6P</span><span>›</span></a>
         </div>
       </div>
 
@@ -85,6 +86,14 @@
     goShortcutPage('youtube/5p.html');
   }
 
+  function openSixPDrawerOrPage() {
+    if (typeof window.openLyricsDrawer === 'function' && document.getElementById('lyricsDrawer')) {
+      window.openLyricsDrawer('sixp');
+      return;
+    }
+    goShortcutPage('youtube/6p.html');
+  }
+
   function updateDrawerCounts() {
     // 예전 코드와 연결되어 있어도 오류 안 나게 남겨둔 빈 함수야.
   }
@@ -122,6 +131,12 @@
         return;
       }
 
+      if (e.shiftKey && code === 'Digit6') {
+        e.preventDefault();
+        goShortcutPage('youtube/6p.html');
+        return;
+      }
+
       if (!e.shiftKey) {
         if (key === 'a') { e.preventDefault(); goShortcutPage('japan/jaindex.html'); return; }
         if (key === 's') { e.preventDefault(); goShortcutPage('china/cnindex.html'); return; }
@@ -132,6 +147,7 @@
         if (key === '3') { e.preventDefault(); goShortcutPage('youtube/3p.html'); return; }
         if (key === '4') { e.preventDefault(); goShortcutPage('youtube/4p.html'); return; }
         if (key === '5') { e.preventDefault(); openFivePDrawerOrPage(); return; }
+        if (key === '6') { e.preventDefault(); openSixPDrawerOrPage(); return; }
       }
     });
   });

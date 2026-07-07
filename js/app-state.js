@@ -15,7 +15,8 @@
     { key: "yt2pVideos", label: "유튜브 영상 2P", emoji: "📺", page: "youtube/2p.html" },
     { key: "yt3pVideos", label: "유튜브 영상 3P", emoji: "📺", page: "youtube/3p.html" },
     { key: "yt4pVideos", label: "유튜브 영상 4P", emoji: "📺", page: "youtube/4p.html" },
-    { key: "yt5pVideos", label: "유튜브 영상 5P", emoji: "📺", page: "youtube/5p.html" }
+    { key: "yt5pVideos", label: "유튜브 영상 5P", emoji: "📺", page: "youtube/5p.html" },
+    { key: "yt6pVideos", label: "유튜브 영상 6P", emoji: "📺", page: "youtube/6p.html" }
   ];
 
   const ALL_STORES = [...COUNTRY_STORES, ...YOUTUBE_STORES];

@@ -184,8 +184,16 @@
     return S.YOUTUBE_STORES?.find((item) => item.key === "yt5pVideos") || null;
   }
 
+  function getSixPStore() {
+    return S.YOUTUBE_STORES?.find((item) => item.key === "yt6pVideos") || null;
+  }
+
   function getFivePSongs() {
     return S.cleanSongArray ? S.cleanSongArray(S.readStorage("yt5pVideos")) : [];
+  }
+
+  function getSixPSongs() {
+    return S.cleanSongArray ? S.cleanSongArray(S.readStorage("yt6pVideos")) : [];
   }
 
   function makeSongTransferPayload(song, extra = {}) {
@@ -212,6 +220,10 @@
 
   function serializeFivePSong(song, index = 0) {
     return JSON.stringify(makeSongTransferPayload(song, { fivePIndex: index, sourceStoreKey: "yt5pVideos" }));
+  }
+
+  function serializeSixPSong(song, index = 0) {
+    return JSON.stringify(makeSongTransferPayload(song, { sixPIndex: index, sourceStoreKey: "yt6pVideos" }));
   }
 
   function serializeLibrarySong(song, index = 0) {
@@ -254,8 +266,55 @@
     `;
   }
 
+  function sixPPanelHTML() {
+    const items = getSixPSongs();
+    if (items.length === 0) {
+      return `
+        <section class="sixp-panel">
+          <p class="sixp-help">6P에 아직 영상이 없어. 현재 페이지 목록의 영상을 이곳에 끌면 6P에 조용히 추가돼.</p>
+          <a class="sixp-open-page" href="${getCollectionPageHref(getSixPStore())}">6P 페이지 열기</a>
+        </section>
+      `;
+    }
+
+    return `
+      <section class="sixp-panel">
+        <p class="sixp-help">6P 영상은 왼쪽 목록/영상 추가 영역으로 끌면 현재 페이지로 이동되고, 현재 페이지 영상을 이곳에 끌면 6P에 조용히 추가돼.</p>
+        <a class="sixp-open-page" href="${getCollectionPageHref(getSixPStore())}">6P 페이지 열기</a>
+        <div class="sixp-video-list">
+          ${items.map((song, index) => {
+            const id = song.id || S.extractID(song.ytUrl);
+            const thumb = id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : "";
+            const sub = S.safeText(song.author || "");
+            return `
+              <article class="sixp-video-card" draggable="true" data-sixp-song="${S.escapeHTML(serializeSixPSong(song, index))}" data-sixp-index="${index}">
+                <div class="sixp-thumb">${thumb ? `<img src="${thumb}" alt="thumb">` : ""}</div>
+                <div class="sixp-meta">
+                  <strong>${S.escapeHTML(song.title || "제목 없음")}</strong>
+                  <span>${S.escapeHTML(sub || "6P 보관 영상")}</span>
+                </div>
+                <button class="sixp-add-btn" type="button" data-sixp-add="${index}">넣기</button>
+              </article>
+            `;
+          }).join("")}
+        </div>
+      </section>
+    `;
+  }
+
   function readFivePTransfer(e) {
     const raw = e?.dataTransfer?.getData("application/x-fivep-song") || "";
+    if (!raw) return null;
+    try {
+      const song = JSON.parse(raw);
+      return song && typeof song === "object" ? song : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function readSixPTransfer(e) {
+    const raw = e?.dataTransfer?.getData("application/x-sixp-song") || "";
     if (!raw) return null;
     try {
       const song = JSON.parse(raw);
@@ -297,6 +356,17 @@
     if (activeTab === "fivep") updateLyricsDrawer();
   }
 
+  function refreshSixPViewAfterStorageChange() {
+    if (S.storeKey === "yt6pVideos") {
+      S.songs = getSixPSongs();
+      if (S.current >= S.songs.length) S.current = Math.max(0, S.songs.length - 1);
+      showList();
+      updatePageSearchSummary();
+      renderTagTools();
+    }
+    if (activeTab === "sixp") updateLyricsDrawer();
+  }
+
   function removeFivePSong(song) {
     if (!song || typeof song !== "object") return false;
     const arr = getFivePSongs();
@@ -310,6 +380,22 @@
     arr.splice(removeIndex, 1);
     S.writeStorage("yt5pVideos", arr);
     refreshFivePViewAfterStorageChange();
+    return true;
+  }
+
+  function removeSixPSong(song) {
+    if (!song || typeof song !== "object") return false;
+    const arr = getSixPSongs();
+    let removeIndex = -1;
+    const hinted = Number(song.sixPIndex);
+    if (Number.isInteger(hinted) && hinted >= 0 && hinted < arr.length && sameVideoForMove(arr[hinted], song)) {
+      removeIndex = hinted;
+    }
+    if (removeIndex < 0) removeIndex = arr.findIndex((item) => sameVideoForMove(item, song));
+    if (removeIndex < 0) return false;
+    arr.splice(removeIndex, 1);
+    S.writeStorage("yt6pVideos", arr);
+    refreshSixPViewAfterStorageChange();
     return true;
   }
 
@@ -339,6 +425,35 @@
     }
 
     refreshFivePViewAfterStorageChange();
+    return true;
+  }
+
+  function addSongToSixP(song) {
+    if (!song || typeof song !== "object") return false;
+    const ytUrl = S.safeLink(song.ytUrl);
+    const id = S.safeText(song.id || S.extractID(ytUrl));
+    if (!ytUrl || !id) return false;
+
+    const arr = getSixPSongs();
+    const already = arr.some((item) => {
+      const itemUrl = S.safeLink(item?.ytUrl || "");
+      const itemId = S.safeText(item?.id || S.extractID(itemUrl));
+      return (id && itemId && id === itemId) || (ytUrl && itemUrl && ytUrl === itemUrl);
+    });
+
+    if (!already) {
+      const clean = S.cleanSong ? S.cleanSong({
+        ...song,
+        ytUrl,
+        id,
+        tags: S.normalizeTags(song.tags),
+        title: song.title || "제목 없음"
+      }) : song;
+      arr.push(clean);
+      S.writeStorage("yt6pVideos", arr);
+    }
+
+    refreshSixPViewAfterStorageChange();
     return true;
   }
 
@@ -384,6 +499,48 @@
     return true;
   }
 
+  function copySixPSongToCurrentPage(song, options = {}) {
+    if (!song || typeof song !== "object") return false;
+    const removeAfterAdd = !!options.removeFromSixP;
+    const targetStore = S.ALL_STORES?.find((item) => item.key === S.storeKey);
+    if (!targetStore || targetStore.key === "yt6pVideos") return false;
+
+    const ytUrl = S.safeLink(song.ytUrl);
+    const id = S.safeText(song.id || S.extractID(ytUrl));
+    if (!ytUrl || !id) {
+      alert("이 6P 영상 링크가 올바르지 않아.");
+      return false;
+    }
+
+    const duplicates = S.collectDuplicateSongs ? S.collectDuplicateSongs({
+      ytUrl,
+      id,
+      title: song.title,
+      storeKey: S.storeKey
+    }) : [];
+
+    if (duplicates.length > 0 && typeof S.confirmDuplicateAdd === "function" && !S.confirmDuplicateAdd(duplicates)) {
+      return false;
+    }
+
+    const clean = S.cleanSong ? S.cleanSong({
+      ...song,
+      ytUrl,
+      id,
+      tags: S.normalizeTags(song.tags),
+      title: song.title || "제목 없음"
+    }) : song;
+
+    S.songs = [...(S.songs || []), clean];
+    S.save();
+    if (removeAfterAdd) removeSixPSong(song);
+    showList();
+    updatePageSearchSummary();
+    updateLyricsDrawer();
+    renderTagTools();
+    return true;
+  }
+
 
   function bindFivePTabDrop() {
     const tab = document.getElementById("tabFiveP");
@@ -408,6 +565,32 @@
       tab.classList.remove("fivep-drop-over");
       addSongToFiveP(song);
       setTab("fivep");
+    });
+  }
+
+  function bindSixPTabDrop() {
+    const tab = document.getElementById("tabSixP");
+    if (!tab || tab.dataset.libraryDropBound === "1") return;
+    tab.dataset.libraryDropBound = "1";
+
+    tab.addEventListener("dragover", (e) => {
+      const types = Array.from(e.dataTransfer?.types || []);
+      if (!types.includes("application/x-library-song")) return;
+      e.preventDefault();
+      tab.classList.add("sixp-drop-over");
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    });
+
+    tab.addEventListener("dragleave", () => tab.classList.remove("sixp-drop-over"));
+
+    tab.addEventListener("drop", (e) => {
+      const song = readLibrarySongTransfer(e);
+      if (!song) return;
+      e.preventDefault();
+      e.stopPropagation();
+      tab.classList.remove("sixp-drop-over");
+      addSongToSixP(song);
+      setTab("sixp");
     });
   }
 
@@ -466,6 +649,61 @@
     });
   }
 
+  function bindSixPPanel() {
+    const panel = document.querySelector(".sixp-panel");
+    if (panel && panel.dataset.libraryDropBound !== "1") {
+      panel.dataset.libraryDropBound = "1";
+      panel.addEventListener("dragover", (e) => {
+        const types = Array.from(e.dataTransfer?.types || []);
+        if (!types.includes("application/x-library-song")) return;
+        e.preventDefault();
+        panel.classList.add("sixp-drop-over");
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      });
+      panel.addEventListener("dragleave", (e) => {
+        if (panel.contains(e.relatedTarget)) return;
+        panel.classList.remove("sixp-drop-over");
+      });
+      panel.addEventListener("drop", (e) => {
+        const song = readLibrarySongTransfer(e);
+        if (!song) return;
+        e.preventDefault();
+        e.stopPropagation();
+        panel.classList.remove("sixp-drop-over");
+        addSongToSixP(song);
+      });
+    }
+
+    document.querySelectorAll("[data-sixp-song]").forEach((card) => {
+      if (card.dataset.sixpDragBound === "1") return;
+      card.dataset.sixpDragBound = "1";
+      card.addEventListener("dragstart", (e) => {
+        const raw = card.getAttribute("data-sixp-song") || "";
+        if (!raw) return;
+        S.dragIndex = null;
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("application/x-sixp-song", raw);
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed?.ytUrl) e.dataTransfer.setData("text/plain", parsed.ytUrl);
+        } catch {}
+        card.classList.add("is-dragging");
+      });
+      card.addEventListener("dragend", () => card.classList.remove("is-dragging"));
+    });
+
+    document.querySelectorAll("[data-sixp-add]").forEach((btn) => {
+      if (btn.dataset.sixpAddBound === "1") return;
+      btn.dataset.sixpAddBound = "1";
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const idx = Number(btn.getAttribute("data-sixp-add"));
+        const song = getSixPSongs()[idx];
+        copySixPSongToCurrentPage(song, { removeFromSixP: true });
+      });
+    });
+  }
+
   function bindFivePDropTargets() {
     const panel = document.querySelector(".left-library-panel");
     if (!panel || panel.dataset.fivepDropBound === "1") return;
@@ -491,6 +729,34 @@
       e.stopPropagation();
       panel.classList.remove("fivep-drop-over");
       copyFivePSongToCurrentPage(song, { removeFromFiveP: true });
+    });
+  }
+
+  function bindSixPDropTargets() {
+    const panel = document.querySelector(".left-library-panel");
+    if (!panel || panel.dataset.sixpDropBound === "1") return;
+    panel.dataset.sixpDropBound = "1";
+
+    panel.addEventListener("dragover", (e) => {
+      const hasSixP = Array.from(e.dataTransfer?.types || []).includes("application/x-sixp-song");
+      if (!hasSixP) return;
+      e.preventDefault();
+      panel.classList.add("sixp-drop-over");
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    });
+
+    panel.addEventListener("dragleave", (e) => {
+      if (panel.contains(e.relatedTarget)) return;
+      panel.classList.remove("sixp-drop-over");
+    });
+
+    panel.addEventListener("drop", (e) => {
+      const song = readSixPTransfer(e);
+      if (!song) return;
+      e.preventDefault();
+      e.stopPropagation();
+      panel.classList.remove("sixp-drop-over");
+      copySixPSongToCurrentPage(song, { removeFromSixP: true });
     });
   }
 
@@ -595,7 +861,7 @@
   }
 
   function normalizeDrawerTab(tab) {
-    return ["lyrics", "mr", "original", "fivep"].includes(tab) ? tab : "lyrics";
+    return ["lyrics", "mr", "original", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
   }
 
   function normalizeLyricsSubTab(tab) {
@@ -1084,6 +1350,7 @@
     const tabMr = document.getElementById("tabMr");
     const tabOriginal = document.getElementById("tabOriginal");
     const tabFiveP = document.getElementById("tabFiveP");
+    const tabSixP = document.getElementById("tabSixP");
     const headTitle = document.querySelector(".lyrics-head-title");
 
     getLyricsLockButton();
@@ -1101,7 +1368,9 @@
     setTabClass(tabMr);
     setTabClass(tabOriginal);
     if (tabFiveP) setTabClass(tabFiveP);
+    if (tabSixP) setTabClass(tabSixP);
     bindFivePTabDrop();
+    bindSixPTabDrop();
 
     if (activeTab === "fivep" && tabFiveP) {
       if (headTitle) headTitle.textContent = "5P";
@@ -1115,8 +1384,20 @@
       return;
     }
 
+    if (activeTab === "sixp" && tabSixP) {
+      if (headTitle) headTitle.textContent = "6P";
+      titleEl.textContent = "6P 영상 보관함";
+      if (tagEl) tagEl.innerHTML = "";
+      textEl.style.display = "none";
+      mediaEl.style.display = "block";
+      tabSixP.classList.add("tab-active");
+      mediaEl.innerHTML = sixPPanelHTML();
+      bindSixPPanel();
+      return;
+    }
+
     if (!s) {
-      if (headTitle) headTitle.textContent = "가사 / 메모 / 기타 / 5P";
+      if (headTitle) headTitle.textContent = "가사 / 메모 / 기타 / 5P / 6P";
       const videoLikePage = isTagPage() || document.body?.dataset?.store?.startsWith("yt");
       titleEl.textContent = videoLikePage ? "재생중인 영상이 없어" : "재생중인 곡이 없어";
       if (tagEl) tagEl.innerHTML = "";
@@ -1131,6 +1412,7 @@
       tabMr.classList.add("tab-disabled-soft");
       tabOriginal.classList.add("tab-disabled-soft");
       if (tabFiveP) tabFiveP.classList.add("tab-ready");
+      if (tabSixP) tabSixP.classList.add("tab-ready");
       return;
     }
 
@@ -1142,6 +1424,7 @@
     tabMr.classList.add("tab-ready");
     tabOriginal.classList.add("tab-ready");
     if (tabFiveP) tabFiveP.classList.add("tab-ready");
+    if (tabSixP) tabSixP.classList.add("tab-ready");
 
     textEl.style.display = "none";
     mediaEl.style.display = "block";
@@ -1153,6 +1436,15 @@
       tabFiveP.classList.add("tab-active");
       mediaEl.innerHTML = fivePPanelHTML();
       bindFivePPanel();
+      updateLockUI();
+      return;
+    }
+
+    if (activeTab === "sixp" && tabSixP) {
+      if (headTitle) headTitle.textContent = "6P";
+      tabSixP.classList.add("tab-active");
+      mediaEl.innerHTML = sixPPanelHTML();
+      bindSixPPanel();
       updateLockUI();
       return;
     }
@@ -1324,6 +1616,14 @@
       return;
     }
 
+    const sixPSong = readSixPTransfer(e);
+    if (sixPSong) {
+      e.stopPropagation();
+      S.dragIndex = null;
+      copySixPSongToCurrentPage(sixPSong, { removeFromSixP: true });
+      return;
+    }
+
     const tag = S.normalizeTag ? S.normalizeTag(e.dataTransfer?.getData("application/x-music-tag") || "") : "";
     if (tag) {
       addDraggedTagToSong(tag, dropIndex);
@@ -1437,6 +1737,7 @@
     document.getElementById("tabMr")?.addEventListener("click", () => setTab("mr"));
     document.getElementById("tabOriginal")?.addEventListener("click", () => setTab("original"));
     document.getElementById("tabFiveP")?.addEventListener("click", () => setTab("fivep"));
+    document.getElementById("tabSixP")?.addEventListener("click", () => setTab("sixp"));
     document.getElementById("btnDownload")?.addEventListener("click", copyCurrentVideoUrl);
 
     document.addEventListener("keydown", (e) => {
@@ -1453,6 +1754,7 @@
     renderTagTools();
     createPageSearchBox();
     bindFivePDropTargets();
+    bindSixPDropTargets();
     updatePageSearchSummary();
   });
 
@@ -1473,4 +1775,5 @@
   window.openVideoLinkPanel = openVideoLinkPanel;
   window.closeVideoLinkPanel = closeVideoLinkPanel;
   window.copyFivePSongToCurrentPage = copyFivePSongToCurrentPage;
+  window.copySixPSongToCurrentPage = copySixPSongToCurrentPage;
 })();
