@@ -952,14 +952,9 @@ ${text}` : text;
     const thumbnailWidth = Number(song.thumbnailWidth || song.thumbnail_width || song.thumbWidth || 0) || 0;
     const thumbnailHeight = Number(song.thumbnailHeight || song.thumbnail_height || song.thumbHeight || 0) || 0;
     let aspect = normalizeVideoAspect(song.aspect || song.videoAspect || song.orientation || song.videoOrientation);
-    // YouTube oEmbed 썸네일은 세로 영상도 가로 캔버스로 오는 경우가 많다.
-    // Shorts 주소는 저장된 잘못된 landscape 값보다 우선해서 세로로 보정한다.
-    const isShortsUrl = /youtube\.com\/shorts\//i.test(ytUrl) || /\/shorts\//i.test(ytUrl);
-    if (isShortsUrl) {
-      aspect = "portrait";
-    } else if (!aspect && thumbnailWidth > 0 && thumbnailHeight > 0) {
+    if (!aspect && thumbnailWidth > 0 && thumbnailHeight > 0) {
       if (thumbnailHeight > thumbnailWidth * 1.15) aspect = "portrait";
-      // 가로 썸네일만으로 실제 영상이 가로라고 확정하지 않는다.
+      else if (thumbnailWidth > thumbnailHeight * 1.15) aspect = "landscape";
     }
     const legacyLyrics = String(song.lyrics || song.lyricsJa || song.lyricsCn || song.lyricsKr || song.lyricsEn || "");
     const lyricsOriginal = song.lyricsOriginal === undefined || song.lyricsOriginal === null
@@ -1130,11 +1125,11 @@ ${text}` : text;
       const data = await res.json();
       const thumbnailWidth = Number(data.thumbnail_width || 0) || 0;
       const thumbnailHeight = Number(data.thumbnail_height || 0) || 0;
-      // oEmbed의 thumbnail_width/height는 실제 영상 비율이 아니라 썸네일 캔버스 비율이다.
-      // Shorts 링크만 즉시 세로로 판정하고, 나머지는 플레이어에서 추가 감지한다.
-      const aspect = /youtube\.com\/shorts\//i.test(ytUrl) || /\/shorts\//i.test(ytUrl)
-        ? "portrait"
-        : "";
+      let aspect = "";
+      if (thumbnailWidth > 0 && thumbnailHeight > 0) {
+        if (thumbnailHeight > thumbnailWidth * 1.15) aspect = "portrait";
+        else if (thumbnailWidth > thumbnailHeight * 1.15) aspect = "landscape";
+      }
       return {
         title: data.title || "제목 없음",
         author: data.author_name || "",

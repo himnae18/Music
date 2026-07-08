@@ -1928,22 +1928,6 @@ body[data-page="tag"] .tag-tools .tag-tools-path-list::-webkit-scrollbar-thumb{
   margin-left:50%;
   margin-right:0;
   transform:translateX(-50%);
-  background:transparent;
-  overflow:hidden;
-  border-radius:14px;
-}
-
-/* YT.Player가 div를 iframe으로 바꾼 뒤에도 세로 프레임을 정확히 꽉 채운다. */
-.music-page-layout .center-player-panel .player-wrap.player-portrait > #player,
-.music-page-layout .center-player-panel .player-wrap.player-portrait > iframe,
-.music-page-layout .center-player-panel .player-wrap.player-portrait iframe{
-  display:block;
-  width:100% !important;
-  height:100% !important;
-  min-width:100% !important;
-  min-height:100% !important;
-  border:0;
-  border-radius:14px;
 }
 
 @media (min-width:1500px){
