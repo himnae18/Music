@@ -49,6 +49,10 @@
     return typeof S.isTagPage === "function" && S.isTagPage();
   }
 
+  function isYoutubeCollectionPage() {
+    return !isTagPage() && String(S.storeKey || "").startsWith("yt");
+  }
+
   function songIdentity(song) {
     const url = S.safeLink(song?.ytUrl);
     return {
@@ -794,6 +798,13 @@
         : (hasMr ? "status-has-mr" : "status-no-mr");
       const statusLabel = hasMr ? "MR" : "없음";
       const sourceBadge = isTagPage() ? collectionBadgeText(s) : "";
+      const actionButtonHTML = isYoutubeCollectionPage()
+        ? `<button class="pl-mr-status pl-add-status" type="button" title="현재 목록에서 숨기고 태그 설명에 기록" onclick="event.stopPropagation(); archivePlaylistSong(${i});">추가</button>`
+        : `<button class="pl-mr-status ${statusClass}" type="button"
+            title="${hasMr ? "MR 링크 있음 - 누르면 큰 유튜브 창에서 MR 재생" : "MR 링크 없음"}"
+            onclick="event.stopPropagation(); playMr(${i});">
+            ${statusLabel}
+          </button>`;
       const subText = [S.safeText(s.author || ""), sourceBadge].filter(Boolean).join(" · ");
 
       html += `
@@ -821,11 +832,7 @@
             <div class="pl-sub">${S.escapeHTML(subText)}</div>
           </div>
 
-          <button class="pl-mr-status ${statusClass}" type="button"
-            title="${hasMr ? "MR 링크 있음 - 누르면 큰 유튜브 창에서 MR 재생" : "MR 링크 없음"}"
-            onclick="event.stopPropagation(); playMr(${i});">
-            ${statusLabel}
-          </button>
+${actionButtonHTML}
         </div>
       `;
     });
@@ -838,6 +845,7 @@
   }
 
   let activeTab = "lyrics";
+  let activeTagDescriptionTag = "";
   let editorLocked = localStorage.getItem("lyricsMemoEditorLocked") !== "unlocked";
 
   const LYRICS_SUB_TABS = [
@@ -861,7 +869,7 @@
   }
 
   function normalizeDrawerTab(tab) {
-    return ["lyrics", "mr", "original", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
+    return ["lyrics", "tagdesc", "mr", "videomemo", "original", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
   }
 
   function normalizeLyricsSubTab(tab) {
@@ -1226,6 +1234,160 @@
     });
   }
 
+  function getDrawerSelectedTag(song = null) {
+    if (isTagPage()) return S.getCurrentTagParam?.() || "";
+    const tags = S.normalizeTags(song?.tags);
+    if (activeTagDescriptionTag && tags.includes(activeTagDescriptionTag)) return activeTagDescriptionTag;
+    return tags[0] || "";
+  }
+
+  function tagDescriptionTagPickerHTML(tags, selectedTag) {
+    if (!tags.length) return `<p class="tag-description-empty">붙어 있는 태그가 아직 없어.</p>`;
+    return `
+      <div class="tag-description-tag-list">
+        ${tags.map((tag) => `
+          <button type="button" class="tag-description-tag-btn ${selectedTag === tag ? "is-active" : ""}" data-tag-description-pick="${S.escapeHTML(tag)}">#${S.escapeHTML(tag)}</button>
+        `).join("")}
+      </div>
+    `;
+  }
+
+  function tagArchiveCardsHTML(tag) {
+    const clean = S.normalizeTag(tag);
+    if (!clean) return `<p class="tag-description-empty">먼저 태그를 선택해줘.</p>`;
+    const records = (typeof S.readRemovedVideoArchive === "function" ? S.readRemovedVideoArchive() : [])
+      .filter((item) => S.normalizeTag(item.primaryTag) === clean || S.normalizeTags(item.tags).includes(clean));
+    if (!records.length) return `<p class="tag-description-empty">여기에 자동으로 쌓인 정리 기록이 아직 없어.</p>`;
+    return `
+      <div class="tag-archive-list">
+        ${records.map((record) => {
+          const dateText = typeof S.formatArchiveDateText === "function" ? S.formatArchiveDateText(record.removedAt || new Date()) : "";
+          const desc = S.escapeHTML(String(record.lyrics || "")).replace(/\n/g, "<br>");
+          const href = pageSongHref({ page: (S.ALL_STORES || []).find((item) => item.key === record.sourceStoreKey)?.page || "" }, record);
+          return `
+            <article class="tag-archive-card">
+              <div class="tag-archive-sep">============</div>
+              <div class="tag-archive-line">${S.escapeHTML(dateText)} /</div>
+              <div class="tag-archive-line">
+                <span>${S.escapeHTML(record.title || "제목 없음")} / </span>
+                <a class="tag-archive-link" href="${href}" title="사이트에서 바로 재생">${S.escapeHTML(record.ytUrl || "")}</a>
+              </div>
+              <div class="tag-archive-desc">${desc || `<span class="tag-description-empty">설명이 비어 있어.</span>`}</div>
+              <div class="tag-archive-sep">============</div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  function tagDescriptionPanelHTML(song = null) {
+    const explicitTag = isTagPage() ? (S.getCurrentTagParam?.() || "") : "";
+    const tags = explicitTag ? [explicitTag] : S.normalizeTags(song?.tags);
+    const selectedTag = explicitTag || getDrawerSelectedTag(song);
+    const description = selectedTag && typeof S.getTagSharedDescription === "function" ? S.getTagSharedDescription(selectedTag) : "";
+    return `
+      <section class="tag-description-panel" aria-label="태그 설명">
+        <div class="tag-description-head">
+          <strong>태그 설명</strong>
+          <span>${selectedTag ? `현재 태그: #${S.escapeHTML(selectedTag)}` : "영상의 태그 설명을 적을 수 있어."}</span>
+        </div>
+        ${tagDescriptionTagPickerHTML(tags, selectedTag)}
+        <textarea class="tag-description-textarea ${editorLocked ? "is-locked" : "is-unlocked"}" data-tag-description-editor="${S.escapeHTML(selectedTag)}" placeholder="여기에 태그 자체 설명을 적어줘. 쓰는 즉시 자동 저장돼." spellcheck="false" ${editorLocked ? "readonly" : ""}>${S.escapeHTML(description)}</textarea>
+        <p class="memo-save-help editor-lock-help">${editorLocked ? "잠금 상태야. 위의 잠금 버튼을 풀면 수정할 수 있어." : "수정 가능 상태야. 입력하면 바로 자동 저장돼."}</p>
+        <div class="tag-description-archive">
+          <h3>정리 기록</h3>
+          ${tagArchiveCardsHTML(selectedTag)}
+        </div>
+      </section>
+    `;
+  }
+
+  function bindTagDescriptionPanel(song = null) {
+    document.querySelectorAll('[data-tag-description-pick]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeTagDescriptionTag = S.normalizeTag(btn.getAttribute('data-tag-description-pick') || "");
+        updateLyricsDrawer();
+      });
+    });
+
+    const editor = document.querySelector('[data-tag-description-editor]');
+    if (!editor) return;
+    editor.readOnly = editorLocked;
+    editor.addEventListener('input', () => {
+      if (editorLocked) return;
+      const tag = S.normalizeTag(editor.getAttribute('data-tag-description-editor') || "");
+      if (!tag || typeof S.setTagSharedDescription !== 'function') return;
+      S.setTagSharedDescription(tag, editor.value);
+    });
+  }
+
+  function tagVideoMemoPanelHTML() {
+    const tag = S.getCurrentTagParam?.() || getDrawerSelectedTag(getCurrentSong());
+    if (!tag) {
+      return `
+        <section class="tag-video-memo-panel"><p class="tag-description-empty">먼저 태그를 하나 골라줘.</p></section>
+      `;
+    }
+    const items = (typeof S.getAllSongs === 'function' ? S.getAllSongs() : []).filter((song) => S.normalizeTags(song.tags).includes(tag));
+    return `
+      <section class="tag-video-memo-panel">
+        <div class="tag-description-head">
+          <strong>영상메모</strong>
+          <span>#${S.escapeHTML(tag)} 태그가 있는 영상 메모 모음</span>
+        </div>
+        <div class="tag-video-memo-list">
+          ${items.length ? items.map((item) => {
+            const label = collectionBadgeText(item) || (item.collection?.label || '재생목록');
+            const href = pageSongHref(item.collection || item.country || {}, item);
+            return `
+              <article class="tag-video-memo-item">
+                <div class="tag-video-memo-sep">==</div>
+                <div class="tag-video-memo-head">
+                  <div class="tag-video-memo-title">(${Number(item.index) + 1}) ${S.escapeHTML(item.title || '제목 없음')}</div>
+                  <a class="tag-video-memo-jump" href="${href}" title="재생목록에서 바로가기">&lt;</a>
+                </div>
+                <div class="tag-video-memo-sub">${S.escapeHTML(label)}</div>
+                <pre class="tag-video-memo-body">${S.escapeHTML(String(item.memo || ''))}</pre>
+                <div class="tag-video-memo-sep">==</div>
+              </article>
+            `;
+          }).join('') : `<p class="tag-description-empty">이 태그를 가진 영상이 아직 없어.</p>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function archivePlaylistSong(index) {
+    if (!isYoutubeCollectionPage()) return;
+    const target = songs[index];
+    if (!target) return;
+    if (typeof S.archiveRemovedVideo === 'function') S.archiveRemovedVideo(target, { sourceStoreKey: S.storeKey, sourceIndex: index });
+
+    const wasCurrent = index === current;
+    songs.splice(index, 1);
+
+    if (songs.length === 0) {
+      save();
+      if (typeof ytPlayer !== 'undefined' && ytPlayer) ytPlayer.stopVideo();
+      current = 0;
+      showList();
+      updateLyricsDrawer();
+      updateControlLabels();
+      if (typeof renderTagTools === 'function') renderTagTools();
+      return;
+    }
+
+    if (index < current) current--;
+    if (current >= songs.length) current = songs.length - 1;
+    save();
+    showList();
+    updateLyricsDrawer();
+    updateControlLabels();
+    if (typeof renderTagTools === 'function') renderTagTools();
+    if (wasCurrent && typeof play === 'function') play(current);
+  }
+
   function extraPanelHTML(song) {
     const url = getOriginalUrl(song);
     const found = url ? findSongByUrl(url) : null;
@@ -1347,6 +1509,7 @@
     const mediaEl = document.getElementById("lyricsNowMedia");
     const tagEl = document.getElementById("lyricsNowTags");
     const tabLyrics = document.getElementById("tabLyrics");
+    const tabTagDesc = document.getElementById("tabTagDesc");
     const tabMr = document.getElementById("tabMr");
     const tabOriginal = document.getElementById("tabOriginal");
     const tabFiveP = document.getElementById("tabFiveP");
@@ -1363,12 +1526,26 @@
     const s = songs[S.current];
 
     activeTab = normalizeDrawerTab(activeTab);
+    if (isTagPage() && activeTab === "lyrics") activeTab = "tagdesc";
+    if (isTagPage() && activeTab === "mr") activeTab = "videomemo";
 
     setTabClass(tabLyrics);
+    if (tabTagDesc) setTabClass(tabTagDesc);
     setTabClass(tabMr);
     setTabClass(tabOriginal);
     if (tabFiveP) setTabClass(tabFiveP);
     if (tabSixP) setTabClass(tabSixP);
+
+    if (tabTagDesc) tabTagDesc.hidden = false;
+    if (isTagPage()) {
+      tabLyrics.hidden = true;
+      tabOriginal.hidden = true;
+      tabMr.textContent = "영상메모";
+    } else {
+      tabLyrics.hidden = false;
+      tabOriginal.hidden = false;
+      tabMr.textContent = "메모";
+    }
     bindFivePTabDrop();
     bindSixPTabDrop();
 
@@ -1397,20 +1574,52 @@
     }
 
     if (!s) {
-      if (headTitle) headTitle.textContent = "가사 / 메모 / 기타 / 5P / 6P";
+      const selectedTag = S.getCurrentTagParam?.() || "";
+      if (activeTab === "tagdesc" && tabTagDesc) {
+        if (headTitle) headTitle.textContent = "태그설명";
+        titleEl.textContent = selectedTag ? `#${selectedTag}` : "태그설명";
+        if (tagEl) tagEl.innerHTML = selectedTag ? `<div class="song-tags song-tags-drawer"><a class="song-tag-chip drawer-tag-chip is-active" href="#">#${S.escapeHTML(selectedTag)}</a></div>` : "";
+        textEl.style.display = "none";
+        mediaEl.style.display = "block";
+        tabTagDesc.classList.add("tab-active");
+        mediaEl.innerHTML = tagDescriptionPanelHTML();
+        bindTagDescriptionPanel();
+        updateLockUI();
+        return;
+      }
+
+      if (activeTab === "videomemo" && isTagPage()) {
+        if (headTitle) headTitle.textContent = "영상메모";
+        titleEl.textContent = selectedTag ? `#${selectedTag}` : "영상메모";
+        if (tagEl) tagEl.innerHTML = selectedTag ? `<div class="song-tags song-tags-drawer"><a class="song-tag-chip drawer-tag-chip is-active" href="#">#${S.escapeHTML(selectedTag)}</a></div>` : "";
+        textEl.style.display = "none";
+        mediaEl.style.display = "block";
+        tabMr.classList.add("tab-active");
+        mediaEl.innerHTML = tagVideoMemoPanelHTML();
+        updateLockUI();
+        return;
+      }
+
+      if (headTitle) headTitle.textContent = isTagPage() ? "태그설명 / 영상메모 / 5P / 6P" : "설명 / 메모 / 기타 / 5P / 6P";
       const videoLikePage = isTagPage() || document.body?.dataset?.store?.startsWith("yt");
       titleEl.textContent = videoLikePage ? "재생중인 영상이 없어" : "재생중인 곡이 없어";
       if (tagEl) tagEl.innerHTML = "";
       textEl.textContent = videoLikePage
-        ? "영상을 재생하면 여기서 설명/메모/기타 정보를 볼 수 있어."
+        ? "영상을 재생하면 여기서 설명/태그설명/메모/기타 정보를 볼 수 있어."
         : "노래를 재생하면 여기서 원어/발음/뜻 가사를 나눠 적을 수 있어.";
       textEl.style.display = "block";
       mediaEl.style.display = "none";
       mediaEl.innerHTML = "";
 
-      tabLyrics.classList.add("tab-active");
-      tabMr.classList.add("tab-disabled-soft");
-      tabOriginal.classList.add("tab-disabled-soft");
+      if (isTagPage()) {
+        if (tabTagDesc) tabTagDesc.classList.add("tab-active");
+        tabMr.classList.add("tab-disabled-soft");
+      } else {
+        tabLyrics.classList.add("tab-active");
+        if (tabTagDesc) tabTagDesc.classList.add("tab-ready");
+        tabMr.classList.add("tab-disabled-soft");
+        tabOriginal.classList.add("tab-disabled-soft");
+      }
       if (tabFiveP) tabFiveP.classList.add("tab-ready");
       if (tabSixP) tabSixP.classList.add("tab-ready");
       return;
@@ -1420,9 +1629,10 @@
     titleEl.textContent = author ? `${S.safeText(s.title || "제목 없음")} - ${author}` : S.safeText(s.title || "제목 없음");
     if (tagEl) tagEl.innerHTML = songTagsHTML(s, "drawer");
 
-    tabLyrics.classList.add("tab-ready");
+    if (!isTagPage()) tabLyrics.classList.add("tab-ready");
+    if (tabTagDesc) tabTagDesc.classList.add("tab-ready");
     tabMr.classList.add("tab-ready");
-    tabOriginal.classList.add("tab-ready");
+    if (!isTagPage()) tabOriginal.classList.add("tab-ready");
     if (tabFiveP) tabFiveP.classList.add("tab-ready");
     if (tabSixP) tabSixP.classList.add("tab-ready");
 
@@ -1449,6 +1659,23 @@
       return;
     }
 
+    if (activeTab === "tagdesc" && tabTagDesc) {
+      if (headTitle) headTitle.textContent = "태그설명";
+      tabTagDesc.classList.add("tab-active");
+      mediaEl.innerHTML = tagDescriptionPanelHTML(s);
+      bindTagDescriptionPanel(s);
+      updateLockUI();
+      return;
+    }
+
+    if (activeTab === "videomemo" && isTagPage()) {
+      if (headTitle) headTitle.textContent = "영상메모";
+      tabMr.classList.add("tab-active");
+      mediaEl.innerHTML = tagVideoMemoPanelHTML();
+      updateLockUI();
+      return;
+    }
+
     if (activeTab === "mr") {
       if (headTitle) headTitle.textContent = "메모";
       tabMr.classList.add("tab-active");
@@ -1467,7 +1694,16 @@
       return;
     }
 
-    activeTab = "lyrics";
+    activeTab = isTagPage() ? "tagdesc" : "lyrics";
+    if (isTagPage()) {
+      if (tabTagDesc) tabTagDesc.classList.add("tab-active");
+      if (headTitle) headTitle.textContent = "태그설명";
+      mediaEl.innerHTML = tagDescriptionPanelHTML(s);
+      bindTagDescriptionPanel(s);
+      updateLockUI();
+      return;
+    }
+
     tabLyrics.classList.add("tab-active");
 
     if (shouldUseLyricsParts(s)) {
@@ -1475,12 +1711,21 @@
       mediaEl.innerHTML = lyricsTriplePanelHTML(s);
     } else {
       if (headTitle) headTitle.textContent = "설명";
-      mediaEl.innerHTML = editorPanelHTML(
-        s,
-        "lyrics",
-        "여기에 설명을 적어줘. 쓰는 즉시 자동 저장돼.",
-        "설명"
-      );
+      mediaEl.innerHTML = `
+        <div class="video-description-combined">
+          ${editorPanelHTML(
+            s,
+            "lyrics",
+            "여기에 설명을 적어줘. 쓰는 즉시 자동 저장돼.",
+            "설명"
+          )}
+          ${tagDescriptionPanelHTML(s)}
+        </div>
+      `;
+      bindTextEditorAutosave();
+      bindTagDescriptionPanel(s);
+      updateLockUI();
+      return;
     }
     bindTextEditorAutosave();
     updateLockUI();
@@ -1734,7 +1979,8 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("tabLyrics")?.addEventListener("click", () => setTab("lyrics"));
-    document.getElementById("tabMr")?.addEventListener("click", () => setTab("mr"));
+    document.getElementById("tabTagDesc")?.addEventListener("click", () => setTab("tagdesc"));
+    document.getElementById("tabMr")?.addEventListener("click", () => setTab(isTagPage() ? "videomemo" : "mr"));
     document.getElementById("tabOriginal")?.addEventListener("click", () => setTab("original"));
     document.getElementById("tabFiveP")?.addEventListener("click", () => setTab("fivep"));
     document.getElementById("tabSixP")?.addEventListener("click", () => setTab("sixp"));
@@ -1760,6 +2006,7 @@
 
   window.showList = showList;
   window.updateLyricsDrawer = updateLyricsDrawer;
+  window.archivePlaylistSong = archivePlaylistSong;
   window.renderTagTools = renderTagTools;
   window.renderTagPlayerSummary = renderTagPlayerSummary;
   window.onDragStart = onDragStart;

@@ -25,6 +25,8 @@
   const TITLE_FIXED_TAGS_KEY = "musicTitleFixedTags";
   const TAG_KINDS_KEY = "musicTagKinds";
   const PLAYLIST_TAGS_KEY = "musicPlaylistTags";
+  const TAG_SHARED_DESCRIPTION_KEY = "musicTagSharedDescriptions";
+  const REMOVED_VIDEO_ARCHIVE_KEY = "musicRemovedVideoArchive";
   const TITLE_SHARED_TEXT_FIELDS = ["lyrics", "lyricsOriginal", "lyricsPronunciation", "lyricsMeaning", "memo", "original"];
   const TAG_KIND_OPTIONS = [
     { key: "song", label: "노래전용" },
@@ -212,6 +214,285 @@
       });
     }
     localStorage.setItem(TITLE_SHARED_TEXT_KEY, JSON.stringify(cleanData));
+  }
+
+
+  function readTagSharedDescriptions() {
+    try {
+      const data = JSON.parse(localStorage.getItem(TAG_SHARED_DESCRIPTION_KEY) || "{}");
+      if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+      const result = {};
+      Object.entries(data).forEach(([rawTag, rawValue]) => {
+        const tag = normalizeTag(rawTag);
+        if (!tag) return;
+        result[tag] = String(rawValue ?? "");
+      });
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  function writeTagSharedDescriptions(data) {
+    const cleanData = {};
+    if (data && typeof data === "object" && !Array.isArray(data)) {
+      Object.entries(data).forEach(([rawTag, rawValue]) => {
+        const tag = normalizeTag(rawTag);
+        if (!tag) return;
+        cleanData[tag] = String(rawValue ?? "");
+      });
+    }
+    localStorage.setItem(TAG_SHARED_DESCRIPTION_KEY, JSON.stringify(cleanData));
+  }
+
+  function getTagSharedDescription(tag) {
+    const clean = normalizeTag(tag);
+    if (!clean) return "";
+    return String(readTagSharedDescriptions()[clean] ?? "");
+  }
+
+  function setTagSharedDescription(tag, value) {
+    const clean = normalizeTag(tag);
+    if (!clean) return false;
+    const data = readTagSharedDescriptions();
+    data[clean] = String(value ?? "");
+    writeTagSharedDescriptions(data);
+    return true;
+  }
+
+  function appendTagSharedDescription(tag, value) {
+    const clean = normalizeTag(tag);
+    const text = String(value ?? "");
+    if (!clean || !text) return false;
+    const prev = getTagSharedDescription(clean).trimEnd();
+    const next = prev ? `${prev}
+
+${text}` : text;
+    return setTagSharedDescription(clean, next);
+  }
+
+  function readRemovedVideoArchive() {
+    try {
+      const data = JSON.parse(localStorage.getItem(REMOVED_VIDEO_ARCHIVE_KEY) || "[]");
+      if (!Array.isArray(data)) return [];
+      return data.map((item) => ({
+        title: String(item?.title || "제목 없음"),
+        author: String(item?.author || ""),
+        ytUrl: safeLink(item?.ytUrl || item?.url || ""),
+        id: String(item?.id || extractID(item?.ytUrl || item?.url || "") || ""),
+        lyrics: String(item?.lyrics || ""),
+        memo: String(item?.memo || ""),
+        original: String(item?.original || ""),
+        tags: normalizeTags(item?.tags),
+        primaryTag: normalizeTag(item?.primaryTag || ""),
+        sourceStoreKey: String(item?.sourceStoreKey || ""),
+        sourceIndex: Number.isFinite(Number(item?.sourceIndex)) ? Number(item.sourceIndex) : -1,
+        removedAt: String(item?.removedAt || "")
+      })).filter((item) => item.id || item.ytUrl);
+    } catch {
+      return [];
+    }
+  }
+
+  function writeRemovedVideoArchive(list) {
+    const clean = Array.isArray(list) ? list.map((item) => ({
+      title: String(item?.title || "제목 없음"),
+      author: String(item?.author || ""),
+      ytUrl: safeLink(item?.ytUrl || item?.url || ""),
+      id: String(item?.id || extractID(item?.ytUrl || item?.url || "") || ""),
+      lyrics: String(item?.lyrics || ""),
+      memo: String(item?.memo || ""),
+      original: String(item?.original || ""),
+      tags: normalizeTags(item?.tags),
+      primaryTag: normalizeTag(item?.primaryTag || ""),
+      sourceStoreKey: String(item?.sourceStoreKey || ""),
+      sourceIndex: Number.isFinite(Number(item?.sourceIndex)) ? Number(item.sourceIndex) : -1,
+      removedAt: String(item?.removedAt || "")
+    })).filter((item) => item.id || item.ytUrl) : [];
+    localStorage.setItem(REMOVED_VIDEO_ARCHIVE_KEY, JSON.stringify(clean));
+  }
+
+  function removedVideoMatches(record, { ytUrl = "", id = "", title = "" } = {}) {
+    const cleanUrl = safeLink(ytUrl);
+    const cleanId = safeText(id) || extractID(cleanUrl);
+    const recordId = String(record?.id || extractID(record?.ytUrl) || "");
+    if (cleanId && recordId && cleanId === recordId) return true;
+    if (cleanUrl && safeLink(record?.ytUrl) === cleanUrl) return true;
+    const titleKey = normalizeDuplicateTitle(title);
+    return !!(titleKey && normalizeDuplicateTitle(record?.title) === titleKey);
+  }
+
+  function findRemovedVideoRecord({ ytUrl = "", id = "", title = "", storeKey: wantedStoreKey = "" } = {}) {
+    const list = readRemovedVideoArchive().filter((record) => removedVideoMatches(record, { ytUrl, id, title }));
+    const scoped = wantedStoreKey ? list.filter((record) => !record.sourceStoreKey || record.sourceStoreKey === wantedStoreKey) : list;
+    return [...(scoped.length ? scoped : list)].sort((a, b) => String(b.removedAt).localeCompare(String(a.removedAt)))[0] || null;
+  }
+
+  function formatArchiveDateText(value = new Date()) {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const yy = String(date.getFullYear()).slice(-2);
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    return `${yy}.${mm}.${dd}`;
+  }
+
+  function buildTagArchiveDescriptionBlock(record) {
+    if (!record) return "";
+    const dateText = formatArchiveDateText(record.removedAt || new Date());
+    const title = String(record.title || "제목 없음");
+    const url = safeLink(record.ytUrl);
+    const desc = String(record.lyrics || "").trim();
+    return [
+      "============",
+      "",
+      `${dateText} /`,
+      `${title} / ${url}`,
+      "",
+      desc,
+      "",
+      "============"
+    ].join("\n");
+  }
+
+  function archiveRemovedVideo(song, options = {}) {
+    if (!song) return null;
+    const cleanSongData = cleanSong(song) || cleanSong({ title: song?.title || "제목 없음", ytUrl: song?.ytUrl || "", tags: song?.tags || [] });
+    if (!cleanSongData) return null;
+    const firstTag = normalizeTags(cleanSongData.tags)[0] || "";
+    const removedAt = options.removedAt || new Date().toISOString();
+    const record = {
+      ...cleanSongData,
+      primaryTag: firstTag,
+      sourceStoreKey: String(options.sourceStoreKey || options.storeKey || storeKey || ""),
+      sourceIndex: Number.isFinite(Number(options.sourceIndex)) ? Number(options.sourceIndex) : -1,
+      removedAt
+    };
+
+    const list = readRemovedVideoArchive().filter((item) => !removedVideoMatches(item, record));
+    list.unshift(record);
+    writeRemovedVideoArchive(list);
+
+    if (firstTag) appendTagSharedDescription(firstTag, buildTagArchiveDescriptionBlock(record));
+    return record;
+  }
+
+  function renameTagEverywhere(oldTag, newTag) {
+    const oldClean = normalizeTag(oldTag);
+    const newClean = normalizeTag(newTag);
+    if (!oldClean || !newClean) return { ok: false, reason: "invalid" };
+    if (oldClean === newClean) return { ok: true, same: true, tag: newClean };
+
+    ALL_STORES.forEach((store) => {
+      const arr = cleanSongArray(readStorage(store.key));
+      let changed = false;
+      arr.forEach((song) => {
+        const tags = normalizeTags(song.tags);
+        if (!tags.includes(oldClean)) return;
+        song.tags = addTags(tags.filter((item) => item !== oldClean), [newClean]);
+        changed = true;
+      });
+      if (changed) writeStorage(store.key, arr);
+    });
+
+    try {
+      if (Array.isArray(songs)) {
+        songs.forEach((song) => {
+          const tags = normalizeTags(song.tags);
+          if (!tags.includes(oldClean)) return;
+          song.tags = addTags(tags.filter((item) => item !== oldClean), [newClean]);
+        });
+      }
+    } catch {}
+
+    const titleTags = readTitleTags();
+    if (titleTags.includes(oldClean)) writeTitleTags(addTags(titleTags.filter((item) => item !== oldClean), [newClean]));
+
+    const playlistTags = readPlaylistTags();
+    if (playlistTags.includes(oldClean)) writePlaylistTags(addTags(playlistTags.filter((item) => item !== oldClean), [newClean]));
+
+    const tagKinds = readTagKinds();
+    if (tagKinds[oldClean]) {
+      tagKinds[newClean] = tagKinds[oldClean];
+      delete tagKinds[oldClean];
+      writeTagKinds(tagKinds);
+    }
+
+    const fixed = readTitleFixedTags();
+    const nextFixed = {};
+    Object.entries(fixed).forEach(([rawKey, rawTags]) => {
+      const key = normalizeTag(rawKey) === oldClean ? newClean : normalizeTag(rawKey);
+      const values = addTags(normalizeTags(rawTags).filter((item) => item !== oldClean), normalizeTags(rawTags).includes(oldClean) ? [newClean] : []);
+      if (key) nextFixed[key] = values;
+    });
+    writeTitleFixedTags(nextFixed);
+
+    const shared = readTitleSharedText();
+    if (shared[oldClean]) {
+      shared[newClean] = shared[oldClean];
+      delete shared[oldClean];
+      writeTitleSharedText(shared);
+    }
+
+    const tagDescriptions = readTagSharedDescriptions();
+    if (Object.prototype.hasOwnProperty.call(tagDescriptions, oldClean)) {
+      tagDescriptions[newClean] = tagDescriptions[oldClean];
+      delete tagDescriptions[oldClean];
+      writeTagSharedDescriptions(tagDescriptions);
+    }
+
+    const archive = readRemovedVideoArchive().map((item) => ({
+      ...item,
+      tags: addTags(normalizeTags(item.tags).filter((tag) => tag !== oldClean), normalizeTags(item.tags).includes(oldClean) ? [newClean] : []),
+      primaryTag: normalizeTag(item.primaryTag) === oldClean ? newClean : normalizeTag(item.primaryTag)
+    }));
+    writeRemovedVideoArchive(archive);
+
+    return { ok: true, tag: newClean };
+  }
+
+  function openArchivedDuplicateDialog(record) {
+    return new Promise((resolve) => {
+      const existing = document.getElementById("archiveDuplicateDialog");
+      if (existing) existing.remove();
+
+      const overlay = document.createElement("div");
+      overlay.id = "archiveDuplicateDialog";
+      overlay.className = "archive-duplicate-overlay";
+      overlay.innerHTML = `
+        <div class="archive-duplicate-box">
+          <h3>이미 추가되었던 영상이야</h3>
+          <p class="archive-duplicate-sub">다시 추가할지 선택해줘.</p>
+          <div class="archive-duplicate-summary">
+            <strong>${escapeHTML(record?.title || "제목 없음")}</strong>
+            <span>${escapeHTML(formatArchiveDateText(record?.removedAt || new Date()))}</span>
+          </div>
+          <div class="archive-duplicate-actions">
+            <button type="button" class="archive-duplicate-btn no-btn" data-archive-action="cancel">아니요</button>
+            <button type="button" class="archive-duplicate-btn memo-btn" data-archive-action="memo">메모보기</button>
+            <button type="button" class="archive-duplicate-btn add-btn" data-archive-action="add">추가할거임</button>
+          </div>
+          <div class="archive-duplicate-memo" hidden>
+            <div><b>설명</b><pre>${escapeHTML(String(record?.lyrics || ""))}</pre></div>
+            <div><b>메모</b><pre>${escapeHTML(String(record?.memo || ""))}</pre></div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+      const memoBox = overlay.querySelector('.archive-duplicate-memo');
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) { overlay.remove(); resolve(false); }
+        const btn = e.target.closest('[data-archive-action]');
+        if (!btn) return;
+        const action = btn.getAttribute('data-archive-action');
+        if (action === 'memo') {
+          if (memoBox) memoBox.hidden = !memoBox.hidden;
+          return;
+        }
+        overlay.remove();
+        resolve(action === 'add');
+      });
+    });
   }
 
   function getSongTitleTag(song) {
@@ -931,30 +1212,37 @@
     if (!cleanUrl || !id) return { ok: false, error: "유튜브 링크가 올바르지 않아." };
 
     const meta = await fetchYouTubeMeta(cleanUrl);
+    const archivedRecord = findRemovedVideoRecord({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
+    if (archivedRecord) {
+      const allowArchived = await openArchivedDuplicateDialog(archivedRecord);
+      if (!allowArchived) return { ok: false, cancelled: true, duplicate: true, archived: true, record: archivedRecord, error: "이전에 추가했던 영상이라 취소했어." };
+    }
+
     const duplicates = collectDuplicateSongs({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
     if (duplicates.length > 0 && !confirmDuplicateAdd(duplicates)) {
       return { ok: false, cancelled: true, duplicate: true, duplicates, error: "중복 추가를 취소했어." };
     }
 
-    ensureTagKinds(tags, "song");
-    const finalTags = applyTitleFixedTagsToTags(tags);
+    const baseTags = archivedRecord ? addTags(archivedRecord.tags, tags) : tags;
+    ensureTagKinds(baseTags, "song");
+    const finalTags = applyTitleFixedTagsToTags(baseTags);
     ensureTagKinds(finalTags, "song");
     const arr = cleanSongArray(readStorage(targetStore.key));
 
     arr.push(cleanSong({
-      title: meta.title || "제목 없음",
-      author: meta.author || "",
+      title: archivedRecord?.title || meta.title || "제목 없음",
+      author: archivedRecord?.author || meta.author || "",
       ytUrl: cleanUrl,
       id,
-      lyrics: safeText(lyrics),
-      mr: safeLink(mr),
+      lyrics: archivedRecord ? String(archivedRecord.lyrics || "") : safeText(lyrics),
+      mr: archivedRecord ? safeLink(archivedRecord.mr || "") : safeLink(mr),
       score: "",
-      original: safeLink(original),
-      memo: "",
+      original: archivedRecord ? safeLink(archivedRecord.original || "") : safeLink(original),
+      memo: archivedRecord ? String(archivedRecord.memo || "") : "",
       tags: finalTags,
-      aspect: meta.aspect || "",
-      thumbnailWidth: meta.thumbnailWidth || 0,
-      thumbnailHeight: meta.thumbnailHeight || 0
+      aspect: meta.aspect || archivedRecord?.aspect || "",
+      thumbnailWidth: meta.thumbnailWidth || archivedRecord?.thumbnailWidth || 0,
+      thumbnailHeight: meta.thumbnailHeight || archivedRecord?.thumbnailHeight || 0
     }));
     const index = arr.length - 1;
 
@@ -965,7 +1253,7 @@
       current = index;
     }
 
-    return { ok: true, storeKey: targetStore.key, store: targetStore, index, song: arr[index], updatedExisting: false, duplicateAllowed: duplicates.length > 0 };
+    return { ok: true, storeKey: targetStore.key, store: targetStore, index, song: arr[index], updatedExisting: false, duplicateAllowed: duplicates.length > 0 || !!archivedRecord, archivedRecord };
   }
 
   function getAllSongs() {
@@ -1058,6 +1346,19 @@
     addVideoToStoreWithTags,
     readTitleSharedText,
     writeTitleSharedText,
+    readTagSharedDescriptions,
+    writeTagSharedDescriptions,
+    getTagSharedDescription,
+    setTagSharedDescription,
+    appendTagSharedDescription,
+    readRemovedVideoArchive,
+    writeRemovedVideoArchive,
+    findRemovedVideoRecord,
+    buildTagArchiveDescriptionBlock,
+    archiveRemovedVideo,
+    formatArchiveDateText,
+    renameTagEverywhere,
+    openArchivedDuplicateDialog,
     getSongTitleTag,
     getSharedTextForSong,
     setSharedTextForSong,
@@ -1244,6 +1545,12 @@
           }
           if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "playlistTags") && typeof S.writePlaylistTags === "function") {
             S.writePlaylistTags(data.playlistTags);
+          }
+          if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "tagSharedDescriptions") && typeof S.writeTagSharedDescriptions === "function") {
+            S.writeTagSharedDescriptions(data.tagSharedDescriptions);
+          }
+          if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "removedVideoArchive") && typeof S.writeRemovedVideoArchive === "function") {
+            S.writeRemovedVideoArchive(data.removedVideoArchive);
           }
           if (typeof S.applyTitleFixedTagsToStores === "function") S.applyTitleFixedTagsToStores();
 

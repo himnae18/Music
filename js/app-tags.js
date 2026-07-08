@@ -517,8 +517,22 @@
         const tag = S.normalizeTag(chip.getAttribute("data-drag-tag") || "");
         if (!tag) return;
         e.preventDefault();
-        if (isTitleTag(tag)) openTitleFixedTagModal(tag);
-        else openTagVideoModal(tag);
+        const next = prompt(`태그 이름을 수정해줘.
+현재: #${tag}`, tag) || "";
+        const clean = S.normalizeTag(next);
+        if (!clean || clean === tag) return;
+        if (typeof S.renameTagEverywhere === "function") {
+          S.renameTagEverywhere(tag, clean);
+          if (document.body?.dataset?.page === "tag") {
+            const currentTag = S.getCurrentTagParam?.() || "";
+            if (currentTag === tag) {
+              location.href = `tag.html?tag=${encodeURIComponent(clean)}`;
+              return;
+            }
+          }
+          refreshTagPageAfterChange();
+          if (typeof updateLyricsDrawer === "function") updateLyricsDrawer();
+        }
       });
     });
 
@@ -673,7 +687,7 @@
         href="${tagPageUrl(clean)}"
         draggable="true"
         data-drag-tag="${safe}"
-        title="드래그: 삭제/제목등록/분류이동 · 우클릭: ${registered ? "고정태그 추가" : "영상 추가"}">
+        title="드래그: 삭제/분류이동 · 우클릭: 태그 이름 수정">
         #${safe}
         ${registered ? `<span class="tag-title-badge">${hasShared ? "가사 있음" : "제목"}</span>` : ""}
         ${fixed.length ? `<span class="tag-fixed-badge">고정 ${fixed.length}</span>` : ""}
@@ -844,12 +858,6 @@
             <span>태그를 여기로 끌면 전체 삭제</span>
           </div>
         </div>
-        <div class="tag-side-drop tag-side-drop-right">
-          <div class="tag-drop-zone tag-drop-register" data-tag-drop-action="register-title">
-            <strong>제목등록</strong>
-            <span>노래 제목 태그로 표시</span>
-          </div>
-        </div>
       </div>
       <section class="tag-page-card">
         <h2>${filterTitle}</h2>
@@ -857,7 +865,7 @@
         <div class="tag-filter-tabs" aria-label="태그 보기 필터">
           ${TAG_FILTERS.map((item) => tagFilterButtonHTML(item.key, item.label, currentFilter, filterCounts[item.key] || 0)).join("")}
         </div>
-        <p class="tag-page-help">태그를 왼쪽 큰 영역으로 끌면 전체 삭제, 오른쪽 큰 영역으로 끌면 제목등록이 돼. 위 분류 버튼에 태그를 끌어놓으면 해당 분류로 저장되고, 현재 보고 있는 창은 그대로 유지돼. 공유 데이터가 있는 제목태그는 핑크색으로 표시돼.</p>
+        <p class="tag-page-help">태그를 왼쪽 큰 영역으로 끌면 전체 삭제돼. 위 분류 버튼에 태그를 끌어놓으면 해당 분류로 저장되고, 현재 보고 있는 창은 그대로 유지돼. 태그를 우클릭하면 이름을 수정할 수 있어.</p>
         <div class="tag-cloud tag-index-cloud">
           ${visibleCounts.length ? visibleCounts.map(([tag, count]) => tagChipHTML(tag, count, titleTags, maxCount)).join("") : `<p class="empty-center">이 분류에 표시할 태그가 없어.</p>`}
         </div>

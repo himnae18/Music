@@ -14,6 +14,16 @@ async function addSong() {
   }
 
   const meta = await fetchYouTubeMeta(ytUrl);
+  const archivedRecord = typeof window.AppState?.findRemovedVideoRecord === "function"
+    ? window.AppState.findRemovedVideoRecord({ ytUrl, id, title: meta.title, storeKey: window.AppState?.storeKey || "" })
+    : null;
+  if (archivedRecord) {
+    const allowArchived = typeof window.AppState?.openArchivedDuplicateDialog === "function"
+      ? await window.AppState.openArchivedDuplicateDialog(archivedRecord)
+      : true;
+    if (!allowArchived) return;
+  }
+
   const duplicateMatches = window.AppState?.collectDuplicateSongs?.({
     ytUrl,
     id,
@@ -28,19 +38,19 @@ async function addSong() {
   }
 
   songs.push({
-    title: meta.title,
-    author: meta.author,
+    title: archivedRecord?.title || meta.title,
+    author: archivedRecord?.author || meta.author,
     ytUrl,
     id,
-    lyrics,
-    mr,
+    lyrics: archivedRecord ? String(archivedRecord.lyrics || "") : lyrics,
+    mr: archivedRecord ? safeLink(archivedRecord.mr || "") : mr,
     score,
-    original,
-    memo: "",
-    tags: [],
-    aspect: meta.aspect || "",
-    thumbnailWidth: meta.thumbnailWidth || 0,
-    thumbnailHeight: meta.thumbnailHeight || 0
+    original: archivedRecord ? safeLink(archivedRecord.original || "") : original,
+    memo: archivedRecord ? String(archivedRecord.memo || "") : "",
+    tags: archivedRecord?.tags || [],
+    aspect: meta.aspect || archivedRecord?.aspect || "",
+    thumbnailWidth: meta.thumbnailWidth || archivedRecord?.thumbnailWidth || 0,
+    thumbnailHeight: meta.thumbnailHeight || archivedRecord?.thumbnailHeight || 0
   });
 
   save();
