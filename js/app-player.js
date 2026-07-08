@@ -516,10 +516,13 @@ function getStoredVideoAspect(song) {
 }
 
 function getLikelyVideoAspect(song) {
-  const stored = getStoredVideoAspect(song);
-  if (stored) return stored;
-
   const url = safeLink(song?.ytUrl || song?.url || "");
+  const stored = getStoredVideoAspect(song);
+
+  // 명시적으로 세로 저장된 값은 가장 먼저 사용한다.
+  if (stored === "portrait") return "portrait";
+
+  // 예전에 oEmbed 썸네일 때문에 landscape로 잘못 저장된 Shorts도 다시 세로로 보정한다.
   if (/youtube\.com\/shorts\//i.test(url) || /\/shorts\//i.test(url)) return "portrait";
 
   const hintText = [
@@ -531,6 +534,7 @@ function getLikelyVideoAspect(song) {
 
   const id = String(song?.id || extractID(url) || "").trim();
   if (id && videoAspectCache.has(id)) return videoAspectCache.get(id);
+  if (stored === "landscape") return "landscape";
 
   return "landscape";
 }
@@ -556,10 +560,69 @@ function loadImageSize(src, timeout = 2200) {
     };
 
     const timer = setTimeout(() => finish(null), timeout);
-    img.onload = () => finish({ width: img.naturalWidth || 0, height: img.naturalHeight || 0 });
+    img.crossOrigin = "anonymous";
+    img.onload = () => finish({
+      width: img.naturalWidth || 0,
+      height: img.naturalHeight || 0,
+      image: img
+    });
     img.onerror = () => finish(null);
     img.src = src;
   });
+}
+
+function thumbnailHasPortraitPillarbox(image) {
+  if (!image) return false;
+
+  try {
+    const canvas = document.createElement("canvas");
+    const width = 96;
+    const height = 54;
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return false;
+    ctx.drawImage(image, 0, 0, width, height);
+
+    const pixels = ctx.getImageData(0, 0, width, height).data;
+    const edgeWidth = Math.max(8, Math.floor(width * 0.19));
+    const centerStart = Math.floor(width * 0.36);
+    const centerEnd = Math.ceil(width * 0.64);
+
+    const stats = (x0, x1) => {
+      let sum = 0;
+      let sumSq = 0;
+      let count = 0;
+      for (let y = 3; y < height - 3; y += 2) {
+        for (let x = x0; x < x1; x += 2) {
+          const i = (y * width + x) * 4;
+          const lum = pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722;
+          sum += lum;
+          sumSq += lum * lum;
+          count++;
+        }
+      }
+      const mean = count ? sum / count : 0;
+      const variance = count ? Math.max(0, sumSq / count - mean * mean) : 0;
+      return { mean, deviation: Math.sqrt(variance) };
+    };
+
+    const left = stats(0, edgeWidth);
+    const right = stats(width - edgeWidth, width);
+    const center = stats(centerStart, centerEnd);
+    const edgeMean = (left.mean + right.mean) / 2;
+    const edgeDeviation = (left.deviation + right.deviation) / 2;
+    const balancedEdges = Math.abs(left.mean - right.mean) < 18;
+
+    // 양옆이 거의 검고 단조로운 반면 가운데에 실제 화면이 있으면 세로 영상으로 본다.
+    return balancedEdges
+      && edgeMean < 38
+      && center.mean > edgeMean + 22
+      && edgeDeviation < Math.max(20, center.deviation * 0.72);
+  } catch {
+    // CORS 등으로 픽셀 판독이 막히면 기존 판정으로 안전하게 돌아간다.
+    return false;
+  }
 }
 
 async function detectThumbnailAspect(song) {
@@ -579,15 +642,13 @@ async function detectThumbnailAspect(song) {
     const size = await loadImageSize(src);
     if (!size || size.width < 240 || size.height < 240) continue;
 
-    if (size.height > size.width * 1.15) {
+    if (size.height > size.width * 1.15 || thumbnailHasPortraitPillarbox(size.image)) {
       videoAspectCache.set(id, "portrait");
       return "portrait";
     }
 
-    if (size.width > size.height * 1.15) {
-      videoAspectCache.set(id, "landscape");
-      return "landscape";
-    }
+    // 썸네일은 실제 세로 영상도 가로 캔버스로 제공될 수 있어,
+    // 단순히 width > height라는 이유만으로 즉시 가로 확정하지 않는다.
   }
 
   videoAspectCache.set(id, "landscape");
@@ -605,7 +666,9 @@ function applyPlayerFrame(song) {
   const firstAspect = getLikelyVideoAspect(song);
   setPlayerAspectClass(firstAspect);
 
-  if (firstAspect === "portrait" || getStoredVideoAspect(song)) return;
+  // 세로는 즉시 적용한다. 저장된 landscape 값은 과거 oEmbed 오판일 수 있으므로
+  // 썸네일 검사를 한 번 더 진행해 일반 링크의 세로 영상도 잡아낸다.
+  if (firstAspect === "portrait") return;
 
   detectThumbnailAspect(song).then((detectedAspect) => {
     if (!detectedAspect) return;
