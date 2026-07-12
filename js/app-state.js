@@ -142,7 +142,16 @@
     const parts = [
       safeText(song?.title),
       safeText(song?.author),
-      ...normalizeTags(song?.tags)
+      ...normalizeTags(song?.tags),
+      safeText(song?.lyrics),
+      safeText(song?.lyricsOriginal),
+      safeText(song?.lyricsPronunciation),
+      safeText(song?.lyricsMeaning),
+      safeText(song?.lyricsJa),
+      safeText(song?.lyricsCn),
+      safeText(song?.lyricsKr),
+      safeText(song?.lyricsEn),
+      safeText(song?.lyricsSearchText)
     ];
     return normalizeSearchText(parts.join(" "));
   }
@@ -1066,6 +1075,10 @@ ${text}` : text;
     return document.body?.dataset?.page === "tag";
   }
 
+  function isLyricsPage() {
+    return document.body?.dataset?.page === "lyrics";
+  }
+
   function getCurrentTagParam() {
     return normalizeTag(new URLSearchParams(location.search).get("tag") || "");
   }
@@ -1113,7 +1126,7 @@ ${text}` : text;
   }
 
   function save() {
-    if (isTagPage()) {
+    if (isTagPage() || isLyricsPage()) {
       songs.forEach((song) => saveSongToSource(song));
     } else if (storeKey !== "main") {
       writeStorage(storeKey, songs);
@@ -1374,6 +1387,7 @@ ${text}` : text;
     getTagCounts,
     getTagPageUrl,
     isTagPage,
+    isLyricsPage,
     getCurrentTagParam,
     setSongsRaw,
     saveSongToSource,

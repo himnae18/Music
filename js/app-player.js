@@ -576,8 +576,8 @@ function thumbnailHasPortraitPillarbox(image) {
 
   try {
     const canvas = document.createElement("canvas");
-    const width = 96;
-    const height = 54;
+    const width = 160;
+    const height = 90;
     canvas.width = width;
     canvas.height = height;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -585,40 +585,84 @@ function thumbnailHasPortraitPillarbox(image) {
     ctx.drawImage(image, 0, 0, width, height);
 
     const pixels = ctx.getImageData(0, 0, width, height).data;
-    const edgeWidth = Math.max(8, Math.floor(width * 0.19));
-    const centerStart = Math.floor(width * 0.36);
-    const centerEnd = Math.ceil(width * 0.64);
+    const yStart = 5;
+    const yEnd = height - 5;
 
-    const stats = (x0, x1) => {
+    const columnStats = (x) => {
       let sum = 0;
       let sumSq = 0;
+      let dark = 0;
       let count = 0;
-      for (let y = 3; y < height - 3; y += 2) {
+      for (let y = yStart; y < yEnd; y++) {
+        const i = (y * width + x) * 4;
+        const lum = pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722;
+        sum += lum;
+        sumSq += lum * lum;
+        if (lum < 24) dark++;
+        count++;
+      }
+      const mean = count ? sum / count : 0;
+      const variance = count ? Math.max(0, sumSq / count - mean * mean) : 0;
+      return {
+        mean,
+        deviation: Math.sqrt(variance),
+        darkRatio: count ? dark / count : 0
+      };
+    };
+
+    const columns = Array.from({ length: width }, (_, x) => columnStats(x));
+    const isBlackBarColumn = (stat) => stat.mean < 22 && stat.darkRatio > 0.9 && stat.deviation < 18;
+
+    let leftBar = 0;
+    while (leftBar < width / 2 && isBlackBarColumn(columns[leftBar])) leftBar++;
+
+    let rightBar = 0;
+    while (rightBar < width / 2 && isBlackBarColumn(columns[width - 1 - rightBar])) rightBar++;
+
+    const minBar = Math.floor(width * 0.18);
+    const maxBar = Math.ceil(width * 0.39);
+    if (leftBar < minBar || rightBar < minBar || leftBar > maxBar || rightBar > maxBar) return false;
+    if (Math.abs(leftBar - rightBar) > Math.ceil(width * 0.05)) return false;
+
+    const contentStart = leftBar;
+    const contentEnd = width - rightBar;
+    const contentWidth = contentEnd - contentStart;
+    const contentRatio = contentWidth / height;
+    if (contentRatio < 0.4 || contentRatio > 0.92) return false;
+
+    const regionStats = (x0, x1) => {
+      let sum = 0;
+      let active = 0;
+      let count = 0;
+      for (let y = yStart; y < yEnd; y += 2) {
         for (let x = x0; x < x1; x += 2) {
           const i = (y * width + x) * 4;
           const lum = pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722;
           sum += lum;
-          sumSq += lum * lum;
+          if (lum > 38) active++;
           count++;
         }
       }
-      const mean = count ? sum / count : 0;
-      const variance = count ? Math.max(0, sumSq / count - mean * mean) : 0;
-      return { mean, deviation: Math.sqrt(variance) };
+      return {
+        mean: count ? sum / count : 0,
+        activeRatio: count ? active / count : 0
+      };
     };
 
-    const left = stats(0, edgeWidth);
-    const right = stats(width - edgeWidth, width);
-    const center = stats(centerStart, centerEnd);
-    const edgeMean = (left.mean + right.mean) / 2;
-    const edgeDeviation = (left.deviation + right.deviation) / 2;
-    const balancedEdges = Math.abs(left.mean - right.mean) < 18;
+    const center = regionStats(contentStart, contentEnd);
+    const leftEdgeMean = columns.slice(0, leftBar).reduce((sum, stat) => sum + stat.mean, 0) / Math.max(1, leftBar);
+    const rightEdgeMean = columns.slice(width - rightBar).reduce((sum, stat) => sum + stat.mean, 0) / Math.max(1, rightBar);
+    const edgeMean = (leftEdgeMean + rightEdgeMean) / 2;
 
-    // 양옆이 거의 검고 단조로운 반면 가운데에 실제 화면이 있으면 세로 영상으로 본다.
-    return balancedEdges
-      && edgeMean < 38
-      && center.mean > edgeMean + 22
-      && edgeDeviation < Math.max(20, center.deviation * 0.72);
+    const leftBoundary = columns[Math.min(width - 1, contentStart + 2)]?.mean || 0;
+    const rightBoundary = columns[Math.max(0, contentEnd - 3)]?.mean || 0;
+
+    // 실제 9:16/4:5 영상처럼 양옆에 넓고 균일한 검은 기둥이 있을 때만 세로로 판정한다.
+    // 단순히 화면 가장자리가 어두운 가로 영상은 이 조건을 통과하지 못한다.
+    return center.mean > edgeMean + 30
+      && center.activeRatio > 0.28
+      && leftBoundary > edgeMean + 18
+      && rightBoundary > edgeMean + 18;
   } catch {
     // CORS 등으로 픽셀 판독이 막히면 기존 판정으로 안전하게 돌아간다.
     return false;

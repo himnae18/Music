@@ -47,6 +47,7 @@
       <div class="drawer-divider"></div>
 
       <a class="drawer-tag-link" href="${pre}tag.html">태그</a>
+      <a class="drawer-lyrics-link" href="${pre}lyrics.html">가사</a>
     `;
 
     drawer.querySelectorAll('[data-toggle-target]').forEach((btn) => {

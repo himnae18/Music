@@ -49,6 +49,14 @@
     return typeof S.isTagPage === "function" && S.isTagPage();
   }
 
+  function isLyricsPage() {
+    return typeof S.isLyricsPage === "function" && S.isLyricsPage();
+  }
+
+  function isCombinedLibraryPage() {
+    return isTagPage() || isLyricsPage();
+  }
+
   function isYoutubeCollectionPage() {
     return !isTagPage() && String(S.storeKey || "").startsWith("yt");
   }
@@ -127,7 +135,7 @@
     const total = Number.isFinite(totalCount) ? totalCount : (S.songs || []).length;
     const matched = Number.isFinite(matchCount) ? matchCount : pageSearchResults().length;
     if (!String(pageSearchQuery || "").trim()) {
-      summary.textContent = `이 페이지 안에서 제목 / 태그를 검색할 수 있어. 전체 ${total}개`;
+      summary.textContent = `이 페이지 안에서 제목 / 태그 / 가사를 검색할 수 있어. 전체 ${total}개`;
       return;
     }
     summary.textContent = `검색 결과 ${matched}개 / 전체 ${total}개`;
@@ -148,7 +156,7 @@
     section.setAttribute("aria-label", "현재 페이지 노래 검색");
     section.innerHTML = `
       <div class="add-song-row search-song-row">
-        <input id="pageSongSearchInput" placeholder="제목 / 태그 검색" aria-label="현재 페이지 노래 검색" />
+        <input id="pageSongSearchInput" placeholder="제목 / 태그 / 가사 검색" aria-label="현재 페이지 노래 검색" />
         <button id="pageSongSearchBtn" class="add-song-btn search-song-btn" type="button">검색</button>
       </div>
       <p id="pageSearchSummary" class="search-song-help"></p>
@@ -791,13 +799,16 @@
     filtered.forEach(({ song: s, index: i }, order) => {
       const thumb = s.id ? `https://i.ytimg.com/vi/${s.id}/hqdefault.jpg` : "";
       const active = i === S.current ? " active" : "";
+      const lyricsStatusClass = isLyricsPage()
+        ? (s.lyricsPageHasLyrics ? " lyrics-has-text" : " lyrics-no-text")
+        : "";
       const hasMr = !!S.safeLink(s.mr);
       const isCurrent = i === S.current;
       const statusClass = isCurrent
         ? (hasMr ? "status-current-has-mr" : "status-current-no-mr")
         : (hasMr ? "status-has-mr" : "status-no-mr");
       const statusLabel = hasMr ? "MR" : "없음";
-      const sourceBadge = isTagPage() ? collectionBadgeText(s) : "";
+      const sourceBadge = isCombinedLibraryPage() ? collectionBadgeText(s) : "";
       const actionButtonHTML = isYoutubeCollectionPage()
         ? `<button class="pl-mr-status pl-add-status" type="button" title="현재 목록에서 숨기고 태그 설명에 기록" onclick="event.stopPropagation(); archivePlaylistSong(${i});">추가</button>`
         : `<button class="pl-mr-status ${statusClass}" type="button"
@@ -807,19 +818,21 @@
           </button>`;
       const subText = [S.safeText(s.author || ""), sourceBadge].filter(Boolean).join(" · ");
 
+      const dragAttributes = isLyricsPage()
+        ? `draggable="false"`
+        : `draggable="true" ondragstart="onDragStart(event, ${i})" ondragover="onDragOver(event)" ondrop="onDrop(event, ${i})"`;
+      const handleHTML = isLyricsPage()
+        ? ""
+        : `<div class="pl-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation();"><span></span><span></span></div>`;
+
       html += `
-        <div class="pl-item${active}"
-          draggable="true"
-          ondragstart="onDragStart(event, ${i})"
-          ondragover="onDragOver(event)"
-          ondrop="onDrop(event, ${i})"
+        <div class="pl-item${active}${lyricsStatusClass}"
+          ${dragAttributes}
           onclick="play(${i})">
 
           <div class="pl-left">
-            <div class="pl-index">${i + 1}</div>
-            <div class="pl-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation();">
-              <span></span><span></span>
-            </div>
+            <div class="pl-index">${order + 1}</div>
+            ${handleHTML}
             <div class="pl-playing">${i === S.current ? "▶" : ""}</div>
           </div>
 

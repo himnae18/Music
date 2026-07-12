@@ -3454,3 +3454,78 @@ body[data-page="tag"] .lyrics-tabs .tab-link{
 .video-description-combined .tag-description-head strong{
   font-size:18px;
 }
+
+
+/* =========================
+   왼쪽 메뉴 가사 바로가기 + 가사 모음 페이지
+========================= */
+.drawer-lyrics-link{
+  width:100%;
+  min-height:44px;
+  margin:0 0 10px;
+  border:0;
+  border-radius:14px;
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  padding:11px 14px;
+  font-size:15px;
+  font-weight:900;
+  cursor:pointer;
+  box-shadow:none;
+  background:#f3d6df !important;
+  color:#3b2730 !important;
+  text-decoration:none;
+}
+.drawer-lyrics-link:hover{
+  background:#ecc4d1 !important;
+  color:#3b2730 !important;
+}
+
+body[data-page="lyrics"] .lyrics-playlist-head{
+  margin-bottom:0;
+}
+
+body[data-page="lyrics"] .lyrics-playlist-head h2{
+  margin-bottom:7px;
+}
+
+body[data-page="lyrics"] .lyrics-page-help{
+  margin:0;
+  color:#777;
+  font-size:13px;
+  line-height:1.55;
+}
+
+body[data-page="lyrics"] .pl-sub{
+  white-space:normal;
+}
+
+
+/* 가사 모음 상태 색상: 가사 있음=빨강, 제목태그만 있음=회색 */
+body[data-page="lyrics"] .pl-item.lyrics-has-text{
+  border-left:5px solid #c62828;
+}
+body[data-page="lyrics"] .pl-item.lyrics-has-text .pl-title,
+body[data-page="lyrics"] .pl-item.lyrics-has-text .pl-index{
+  color:#c62828;
+}
+body[data-page="lyrics"] .pl-item.lyrics-no-text{
+  border-left:5px solid #aaa;
+}
+body[data-page="lyrics"] .pl-item.lyrics-no-text .pl-title,
+body[data-page="lyrics"] .pl-item.lyrics-no-text .pl-index{
+  color:#888;
+}
+body[data-page="lyrics"] .pl-item.lyrics-has-text:hover{
+  background:#fff3f3;
+}
+body[data-page="lyrics"] .pl-item.lyrics-no-text:hover{
+  background:#f3f3f3;
+}
+body[data-page="lyrics"] .pl-item.lyrics-has-text.active{
+  background:#fde8e8;
+}
+body[data-page="lyrics"] .pl-item.lyrics-no-text.active{
+  background:#ececec;
+}
