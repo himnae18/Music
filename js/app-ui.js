@@ -135,10 +135,14 @@
     const total = Number.isFinite(totalCount) ? totalCount : (S.songs || []).length;
     const matched = Number.isFinite(matchCount) ? matchCount : pageSearchResults().length;
     if (!String(pageSearchQuery || "").trim()) {
-      summary.textContent = `이 페이지 안에서 제목 / 태그 / 가사를 검색할 수 있어. 전체 ${total}개`;
+      summary.textContent = isLyricsPage()
+        ? `제목태그 / 가사를 검색할 수 있어. 전체 제목태그 파일 ${total}개`
+        : `이 페이지 안에서 제목 / 태그 / 가사를 검색할 수 있어. 전체 ${total}개`;
       return;
     }
-    summary.textContent = `검색 결과 ${matched}개 / 전체 ${total}개`;
+    summary.textContent = isLyricsPage()
+      ? `검색 결과 ${matched}개 파일 / 전체 ${total}개 파일`
+      : `검색 결과 ${matched}개 / 전체 ${total}개`;
   }
 
   function setPageSearchQuery(value) {
@@ -156,7 +160,7 @@
     section.setAttribute("aria-label", "현재 페이지 노래 검색");
     section.innerHTML = `
       <div class="add-song-row search-song-row">
-        <input id="pageSongSearchInput" placeholder="제목 / 태그 / 가사 검색" aria-label="현재 페이지 노래 검색" />
+        <input id="pageSongSearchInput" placeholder="${isLyricsPage() ? "제목태그 / 가사 검색" : "제목 / 태그 / 가사 검색"}" aria-label="현재 페이지 노래 검색" />
         <button id="pageSongSearchBtn" class="add-song-btn search-song-btn" type="button">검색</button>
       </div>
       <p id="pageSearchSummary" class="search-song-help"></p>
@@ -772,9 +776,301 @@
     });
   }
 
+  const LYRICS_BROWSER_COUNTRY_NAMES = {
+    jaSongs: "일본곡",
+    cnSongs: "중국곡",
+    krSongs: "한국곡",
+    enSongs: "영어곡",
+    bgmSongs: "브금"
+  };
+
+  let lyricsBrowserView = "root";
+
+  function normalizeLyricsFileName(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .trim();
+  }
+
+  function compareLyricsFileNames(a, b) {
+    return normalizeLyricsFileName(a?.titleTag).localeCompare(
+      normalizeLyricsFileName(b?.titleTag),
+      "ko",
+      { numeric: true, sensitivity: "base" }
+    );
+  }
+
+  function getLyricsCountryKey(song) {
+    return String(song?.collection?.key || song?.country?.key || song?.storeKey || song?.sourceKey || "");
+  }
+
+  function getLyricsCountryName(key) {
+    return LYRICS_BROWSER_COUNTRY_NAMES[key]
+      || S.COUNTRY_STORES?.find((item) => item.key === key)?.label
+      || "기타";
+  }
+
+  function makeLyricsTitleFiles() {
+    const fileMap = new Map();
+
+    (S.songs || []).forEach((song, index) => {
+      const titleTag = normalizeLyricsFileName(
+        song?.lyricsPageTitleTag
+        || (typeof S.getSongTitleTag === "function" ? S.getSongTitleTag(song) : "")
+      );
+      if (!titleTag) return;
+
+      let file = fileMap.get(titleTag);
+      if (!file) {
+        file = {
+          titleTag,
+          hasLyrics: false,
+          songIndexes: [],
+          countryIndexes: new Map(),
+          countryKeys: new Set(),
+          songs: []
+        };
+        fileMap.set(titleTag, file);
+      }
+
+      const countryKey = getLyricsCountryKey(song);
+      file.songIndexes.push(index);
+      file.songs.push(song);
+      file.hasLyrics = file.hasLyrics || !!song?.lyricsPageHasLyrics;
+
+      if (countryKey) {
+        file.countryKeys.add(countryKey);
+        if (!file.countryIndexes.has(countryKey)) file.countryIndexes.set(countryKey, []);
+        file.countryIndexes.get(countryKey).push(index);
+      }
+    });
+
+    return [...fileMap.values()].sort(compareLyricsFileNames);
+  }
+
+  function lyricsFileMatchesSearch(file, query) {
+    const text = String(query || "").trim();
+    if (!text) return true;
+    const terms = typeof S.getSearchTerms === "function"
+      ? S.getSearchTerms(text)
+      : text.toLowerCase().split(/\s+/).filter(Boolean);
+    const titleHaystack = typeof S.normalizeSearchText === "function"
+      ? S.normalizeSearchText(file.titleTag)
+      : file.titleTag.toLowerCase().replace(/\s+/g, "");
+    const titleMatch = terms.every((term) => titleHaystack.includes(term));
+    if (titleMatch) return true;
+    return file.songs.some((song) => typeof S.songMatchesSearch === "function" && S.songMatchesSearch(song, text));
+  }
+
+  function lyricsBrowserBackView(view) {
+    if (view.startsWith("country:")) return "files";
+    if (view.startsWith("status:")) return "classify";
+    if (view === "files" || view === "classify") return "root";
+    return "root";
+  }
+
+  function lyricsBrowserBreadcrumb(view, isSearch = false) {
+    const pieces = [{ label: "가사", view: "root" }];
+    if (isSearch) {
+      pieces.push({ label: "검색 결과", view: "" });
+      return pieces;
+    }
+    if (view === "files" || view.startsWith("country:")) pieces.push({ label: "파일", view: "files" });
+    if (view.startsWith("country:")) {
+      const key = view.split(":")[1] || "";
+      pieces.push({ label: getLyricsCountryName(key), view });
+    }
+    if (view === "classify" || view.startsWith("status:")) pieces.push({ label: "파일 분류", view: "classify" });
+    if (view === "status:done") pieces.push({ label: "가사 되어있는 것", view });
+    if (view === "status:todo") pieces.push({ label: "가사 안 되어있는 것", view });
+    return pieces;
+  }
+
+  function lyricsBrowserToolbarHTML(view, isSearch = false) {
+    const backDisabled = isSearch || view === "root";
+    const crumbs = lyricsBrowserBreadcrumb(view, isSearch).map((crumb, index, all) => {
+      const isLast = index === all.length - 1 || !crumb.view;
+      const button = isLast
+        ? `<span class="lyrics-browser-crumb-current">${S.escapeHTML(crumb.label)}</span>`
+        : `<button type="button" class="lyrics-browser-crumb" data-lyrics-view="${S.escapeHTML(crumb.view)}">${S.escapeHTML(crumb.label)}</button>`;
+      return `${button}${index < all.length - 1 ? '<span class="lyrics-browser-separator">›</span>' : ''}`;
+    }).join("");
+
+    return `
+      <div class="lyrics-browser-toolbar">
+        <button type="button" class="lyrics-browser-back" data-lyrics-back="1" ${backDisabled ? "disabled" : ""} title="이전 폴더">←</button>
+        <div class="lyrics-browser-path" aria-label="현재 폴더">${crumbs}</div>
+      </div>
+    `;
+  }
+
+  function lyricsFolderRowHTML({ view, name, count, description = "파일 폴더" }) {
+    return `
+      <button type="button" class="lyrics-browser-row lyrics-browser-folder" data-lyrics-view="${S.escapeHTML(view)}">
+        <span class="lyrics-browser-icon" aria-hidden="true">📁</span>
+        <span class="lyrics-browser-name-wrap">
+          <strong class="lyrics-browser-name">${S.escapeHTML(name)}</strong>
+          <span class="lyrics-browser-detail">${S.escapeHTML(description)}</span>
+        </span>
+        <span class="lyrics-browser-count">${Number(count || 0)}개</span>
+      </button>
+    `;
+  }
+
+  function getLyricsFilePlayIndex(file, countryKey = "") {
+    const candidates = countryKey
+      ? (file.countryIndexes.get(countryKey) || [])
+      : file.songIndexes;
+    if (candidates.includes(S.current)) return S.current;
+    const lyricsIndex = candidates.find((index) => !!S.songs?.[index]?.lyricsPageHasLyrics);
+    return lyricsIndex ?? candidates[0] ?? file.songIndexes[0] ?? 0;
+  }
+
+  function lyricsFileRowHTML(file, countryKey = "") {
+    const playIndex = getLyricsFilePlayIndex(file, countryKey);
+    const active = file.songIndexes.includes(S.current) ? " is-active" : "";
+    const stateClass = file.hasLyrics ? " lyrics-file-done" : " lyrics-file-todo";
+    const stateText = file.hasLyrics ? "가사 있음" : "가사 없음";
+    const countryNames = [...file.countryKeys].map(getLyricsCountryName).join(", ") || "기타";
+    const songCount = file.songIndexes.length;
+    const fileName = `${file.titleTag}.txt`;
+
+    return `
+      <button type="button" class="lyrics-browser-row lyrics-browser-file${stateClass}${active}" data-lyrics-song-index="${playIndex}" title="${S.escapeHTML(file.titleTag)}">
+        <span class="lyrics-browser-icon lyrics-text-file-icon" aria-hidden="true"></span>
+        <span class="lyrics-browser-name-wrap">
+          <strong class="lyrics-browser-name">${S.escapeHTML(fileName)}</strong>
+          <span class="lyrics-browser-detail">${S.escapeHTML(countryNames)} · 연결 영상 ${songCount}개</span>
+        </span>
+        <span class="lyrics-browser-state">${stateText}</span>
+      </button>
+    `;
+  }
+
+  function bindLyricsBrowserEvents(list) {
+    if (!list || list.dataset.lyricsBrowserBound === "1") return;
+    list.dataset.lyricsBrowserBound = "1";
+
+    list.addEventListener("click", (event) => {
+      const viewButton = event.target.closest("[data-lyrics-view]");
+      if (viewButton && list.contains(viewButton)) {
+        const nextView = String(viewButton.dataset.lyricsView || "root");
+        if (nextView) {
+          lyricsBrowserView = nextView;
+          showList();
+        }
+        return;
+      }
+
+      const backButton = event.target.closest("[data-lyrics-back]");
+      if (backButton && !backButton.disabled) {
+        lyricsBrowserView = lyricsBrowserBackView(lyricsBrowserView);
+        showList();
+        return;
+      }
+
+      const fileButton = event.target.closest("[data-lyrics-song-index]");
+      if (fileButton) {
+        const index = Number(fileButton.dataset.lyricsSongIndex);
+        if (Number.isInteger(index) && typeof window.play === "function") window.play(index);
+      }
+    });
+  }
+
+  function showLyricsFileBrowser(list) {
+    bindLyricsBrowserEvents(list);
+
+    const allFiles = makeLyricsTitleFiles();
+    const query = String(pageSearchQuery || "").trim();
+    const isSearch = !!query;
+    const matchingFiles = allFiles.filter((file) => lyricsFileMatchesSearch(file, query));
+    updatePageSearchSummary(matchingFiles.length, allFiles.length);
+
+    const countryOrder = (S.COUNTRY_STORES || []).map((country) => country.key);
+    let bodyHTML = "";
+    let titleText = "";
+    let visibleFiles = [];
+    let countryKey = "";
+    let headingCountText = "";
+
+    if (isSearch) {
+      titleText = "검색 결과";
+      visibleFiles = matchingFiles;
+      headingCountText = `${matchingFiles.length}개 파일`;
+    } else if (lyricsBrowserView === "root") {
+      titleText = "가사 파일";
+      const doneCount = allFiles.filter((file) => file.hasLyrics).length;
+      const todoCount = allFiles.length - doneCount;
+      bodyHTML = [
+        lyricsFolderRowHTML({ view: "files", name: "파일", count: allFiles.length, description: "일본곡·중국곡 등 나라별 폴더" }),
+        lyricsFolderRowHTML({ view: "classify", name: "파일 분류", count: 2, description: `가사 있음 ${doneCount}개 · 가사 없음 ${todoCount}개` })
+      ].join("");
+      headingCountText = "2개 폴더";
+    } else if (lyricsBrowserView === "files") {
+      titleText = "파일";
+      const rows = countryOrder.map((key) => {
+        const count = allFiles.filter((file) => file.countryKeys.has(key)).length;
+        return lyricsFolderRowHTML({
+          view: `country:${key}`,
+          name: getLyricsCountryName(key),
+          count,
+          description: "제목태그 메모장"
+        });
+      });
+      bodyHTML = rows.join("");
+      headingCountText = `${rows.length}개 폴더`;
+    } else if (lyricsBrowserView.startsWith("country:")) {
+      countryKey = lyricsBrowserView.split(":")[1] || "";
+      titleText = getLyricsCountryName(countryKey);
+      visibleFiles = allFiles.filter((file) => file.countryKeys.has(countryKey));
+    } else if (lyricsBrowserView === "classify") {
+      titleText = "파일 분류";
+      const doneCount = allFiles.filter((file) => file.hasLyrics).length;
+      const todoCount = allFiles.length - doneCount;
+      bodyHTML = [
+        lyricsFolderRowHTML({ view: "status:done", name: "가사 되어있는 것", count: doneCount, description: "빨간색 제목태그 파일만 모음" }),
+        lyricsFolderRowHTML({ view: "status:todo", name: "가사 안 되어있는 것", count: todoCount, description: "회색 제목태그 파일만 모음" })
+      ].join("");
+      headingCountText = "2개 폴더";
+    } else if (lyricsBrowserView === "status:done") {
+      titleText = "가사 되어있는 것";
+      visibleFiles = allFiles.filter((file) => file.hasLyrics);
+    } else if (lyricsBrowserView === "status:todo") {
+      titleText = "가사 안 되어있는 것";
+      visibleFiles = allFiles.filter((file) => !file.hasLyrics);
+    } else {
+      lyricsBrowserView = "root";
+      showLyricsFileBrowser(list);
+      return;
+    }
+
+    if (visibleFiles.length) {
+      bodyHTML = visibleFiles.map((file) => lyricsFileRowHTML(file, countryKey)).join("");
+      headingCountText = `${visibleFiles.length}개 파일`;
+    } else if (!bodyHTML) {
+      bodyHTML = `<p class="lyrics-browser-empty">${isSearch ? "검색되는 제목태그 파일이 없어." : "이 폴더에는 제목태그 파일이 없어."}</p>`;
+    }
+
+    list.innerHTML = `
+      <div class="lyrics-file-browser">
+        ${lyricsBrowserToolbarHTML(lyricsBrowserView, isSearch)}
+        <div class="lyrics-browser-heading">
+          <strong>${S.escapeHTML(titleText)}</strong>
+          <span>${S.escapeHTML(headingCountText)}</span>
+        </div>
+        <div class="lyrics-browser-list">${bodyHTML}</div>
+      </div>
+    `;
+  }
+
   function showList() {
     const list = document.getElementById("list");
     if (!list) return;
+
+    if (isLyricsPage()) {
+      showLyricsFileBrowser(list);
+      return;
+    }
 
     const previousPlaylist = list.querySelector(".playlist");
     const previousScrollTop = previousPlaylist ? previousPlaylist.scrollTop : 0;

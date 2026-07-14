@@ -3529,3 +3529,310 @@ body[data-page="lyrics"] .pl-item.lyrics-has-text.active{
 body[data-page="lyrics"] .pl-item.lyrics-no-text.active{
   background:#ececec;
 }
+
+/* =========================
+   가사 페이지 - 제목태그 파일 탐색기
+========================= */
+body[data-page="lyrics"] .left-library-panel{
+  background:#fff;
+}
+
+body[data-page="lyrics"] #list{
+  min-height:0;
+}
+
+body[data-page="lyrics"] .lyrics-file-browser{
+  display:flex;
+  flex-direction:column;
+  min-height:0;
+  height:100%;
+  background:#fff;
+  border-top:1px solid #e8e8e8;
+}
+
+body[data-page="lyrics"] .lyrics-browser-toolbar{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:8px 10px;
+  border-bottom:1px solid #e4e4e4;
+  background:#f7f8fa;
+}
+
+body[data-page="lyrics"] .lyrics-browser-back{
+  flex:0 0 34px;
+  width:34px;
+  height:32px;
+  padding:0;
+  border:1px solid #d4d7dc;
+  border-radius:7px;
+  background:#fff;
+  color:#333;
+  box-shadow:none;
+  font-size:18px;
+  line-height:1;
+}
+
+body[data-page="lyrics"] .lyrics-browser-back:hover:not(:disabled){
+  background:#eceff3;
+}
+
+body[data-page="lyrics"] .lyrics-browser-back:disabled{
+  opacity:.35;
+  cursor:default;
+}
+
+body[data-page="lyrics"] .lyrics-browser-path{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  min-width:0;
+  flex:1;
+  min-height:32px;
+  padding:4px 9px;
+  border:1px solid #d4d7dc;
+  border-radius:7px;
+  background:#fff;
+  overflow:hidden;
+  white-space:nowrap;
+}
+
+body[data-page="lyrics"] .lyrics-browser-crumb,
+body[data-page="lyrics"] .lyrics-browser-crumb-current{
+  min-width:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  box-shadow:none;
+  color:#333;
+  font-size:12px;
+  font-weight:700;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+body[data-page="lyrics"] .lyrics-browser-crumb{
+  cursor:pointer;
+}
+
+body[data-page="lyrics"] .lyrics-browser-crumb:hover{
+  color:#b21d43;
+  text-decoration:underline;
+}
+
+body[data-page="lyrics"] .lyrics-browser-separator{
+  color:#9a9a9a;
+  flex:0 0 auto;
+}
+
+body[data-page="lyrics"] .lyrics-browser-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:8px 12px;
+  border-bottom:1px solid #ececec;
+  background:#fff;
+  color:#222;
+  font-size:12px;
+}
+
+body[data-page="lyrics"] .lyrics-browser-heading strong{
+  font-size:13px;
+}
+
+body[data-page="lyrics"] .lyrics-browser-heading span{
+  color:#888;
+  font-size:11px;
+}
+
+body[data-page="lyrics"] .lyrics-browser-list{
+  flex:1;
+  min-height:0;
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  background:#fff;
+}
+
+body[data-page="lyrics"] .lyrics-browser-row{
+  width:100%;
+  min-height:58px;
+  display:grid;
+  grid-template-columns:34px minmax(0, 1fr) auto;
+  align-items:center;
+  gap:8px;
+  padding:7px 10px;
+  border:0;
+  border-bottom:1px solid #ededed;
+  border-radius:0;
+  background:#fff;
+  color:#222;
+  box-shadow:none;
+  text-align:left;
+  cursor:pointer;
+}
+
+body[data-page="lyrics"] .lyrics-browser-row:hover{
+  background:#f3f6fa;
+}
+
+body[data-page="lyrics"] .lyrics-browser-row:focus-visible{
+  position:relative;
+  z-index:1;
+  outline:2px solid #3b82f6;
+  outline-offset:-2px;
+}
+
+body[data-page="lyrics"] .lyrics-browser-icon{
+  width:28px;
+  height:32px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:25px;
+  line-height:1;
+}
+
+body[data-page="lyrics"] .lyrics-browser-name-wrap{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+
+body[data-page="lyrics"] .lyrics-browser-name{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:13px;
+  font-weight:800;
+  line-height:1.25;
+}
+
+body[data-page="lyrics"] .lyrics-browser-detail{
+  display:block;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#888;
+  font-size:10.5px;
+  font-weight:500;
+}
+
+body[data-page="lyrics"] .lyrics-browser-count,
+body[data-page="lyrics"] .lyrics-browser-state{
+  flex:0 0 auto;
+  padding:4px 7px;
+  border-radius:999px;
+  background:#f0f0f0;
+  color:#777;
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+}
+
+body[data-page="lyrics"] .lyrics-browser-folder .lyrics-browser-name{
+  color:#222;
+}
+
+body[data-page="lyrics"] .lyrics-text-file-icon{
+  position:relative;
+  width:25px;
+  height:31px;
+  margin-left:2px;
+  border:1.5px solid currentColor;
+  border-radius:2px;
+  background:linear-gradient(to bottom, transparent 7px, currentColor 7px 8px, transparent 8px 12px, currentColor 12px 13px, transparent 13px 17px, currentColor 17px 18px, transparent 18px 22px, currentColor 22px 23px, transparent 23px);
+  color:inherit;
+}
+
+body[data-page="lyrics"] .lyrics-text-file-icon::after{
+  content:"";
+  position:absolute;
+  top:-1.5px;
+  right:-1.5px;
+  width:8px;
+  height:8px;
+  border-left:1.5px solid currentColor;
+  border-bottom:1.5px solid currentColor;
+  background:#fff;
+}
+
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-done{
+  color:#c62828;
+  border-left:4px solid #c62828;
+}
+
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-done .lyrics-browser-name,
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-done .lyrics-browser-state{
+  color:#c62828;
+}
+
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-done .lyrics-browser-state{
+  background:#fde7e7;
+}
+
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-done:hover{
+  background:#fff3f3;
+}
+
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-todo{
+  color:#8c8c8c;
+  border-left:4px solid #aaa;
+}
+
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-todo .lyrics-browser-name,
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-todo .lyrics-browser-state{
+  color:#888;
+}
+
+body[data-page="lyrics"] .lyrics-browser-file.lyrics-file-todo:hover{
+  background:#f3f3f3;
+}
+
+body[data-page="lyrics"] .lyrics-browser-file.is-active{
+  box-shadow:inset 0 0 0 2px rgba(37,99,235,.45);
+}
+
+
+body[data-page="lyrics"] .lyrics-browser-empty{
+  margin:0;
+  padding:28px 14px;
+  color:#888;
+  font-size:12px;
+  line-height:1.6;
+  text-align:center;
+}
+
+@media (min-width:1181px){
+  body[data-page="lyrics"] #list{
+    height:calc(82vh - 42px);
+    min-height:520px;
+  }
+}
+
+@media (max-width:1180px){
+  body[data-page="lyrics"] #list{
+    height:560px;
+    min-height:360px;
+  }
+}
+
+@media (max-width:720px){
+  body[data-page="lyrics"] #list{
+    height:500px;
+  }
+  body[data-page="lyrics"] .lyrics-browser-row{
+    grid-template-columns:32px minmax(0, 1fr);
+  }
+  body[data-page="lyrics"] .lyrics-browser-count,
+  body[data-page="lyrics"] .lyrics-browser-state{
+    grid-column:2;
+    justify-self:start;
+    margin-top:1px;
+  }
+}

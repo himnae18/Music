@@ -90,11 +90,21 @@
   document.addEventListener("DOMContentLoaded", () => {
     const count = document.getElementById("lyricsPageCount");
     if (count) {
-      const filledCount = lyricsSongs.filter((song) => song.lyricsPageHasLyrics).length;
-      const emptyCount = lyricsSongs.length - filledCount;
-      count.textContent = lyricsSongs.length
-        ? `제목태그/가사 노래 ${lyricsSongs.length}개 · 가사 있음 ${filledCount}개(빨강) · 가사 없음 ${emptyCount}개(회색)`
-        : "아직 제목태그가 등록되거나 가사가 저장된 노래가 없어.";
+      const files = new Map();
+      lyricsSongs.forEach((song) => {
+        const titleTag = String(song.lyricsPageTitleTag || "").trim();
+        if (!titleTag) return;
+        const current = files.get(titleTag) || { hasLyrics: false };
+        current.hasLyrics = current.hasLyrics || !!song.lyricsPageHasLyrics;
+        files.set(titleTag, current);
+      });
+
+      const fileList = [...files.values()];
+      const filledCount = fileList.filter((file) => file.hasLyrics).length;
+      const emptyCount = fileList.length - filledCount;
+      count.textContent = fileList.length
+        ? `제목태그 파일 ${fileList.length}개 · 가사 있음 ${filledCount}개(빨강) · 가사 없음 ${emptyCount}개(회색)`
+        : "아직 제목태그 파일이 없어.";
     }
   });
 })();
