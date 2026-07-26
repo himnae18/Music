@@ -318,27 +318,40 @@ async function addYouTubePlaylist(ytUrl, playlistId) {
       }
     }
 
-    const existingIds = new Set(
-      songs.map((song) => String(song?.id || extractID(song?.ytUrl) || "").trim()).filter(Boolean)
-    );
     const seenIds = new Set();
     const importEntries = [];
     let duplicateCount = 0;
+    let duplicateAddedCount = 0;
 
     playlistEntries.forEach((entry) => {
       const id = String(entry?.id || "").trim();
       if (!id) return;
-      if (existingIds.has(id) || seenIds.has(id)) {
-        duplicateCount += 1;
-        return;
+      const videoUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+
+      let duplicateMatches = window.AppState?.collectExactVideoDuplicates?.({ ytUrl: videoUrl, id }) || [];
+      if (seenIds.has(id)) {
+        duplicateMatches = duplicateMatches.length ? duplicateMatches : [{
+          song: { title: entry?.title || "같은 재생목록 안의 영상" },
+          store: { label: "지금 추가 중인 재생목록" }
+        }];
       }
+
+      if (duplicateMatches.length > 0) {
+        duplicateCount += 1;
+        const allowDuplicate = typeof window.AppState?.confirmExactVideoDuplicateAdd === "function"
+          ? window.AppState.confirmExactVideoDuplicateAdd(duplicateMatches)
+          : window.confirm("이미 추가된 똑같은 영상이 있어. 그래도 추가할까?");
+        if (!allowDuplicate) return;
+        duplicateAddedCount += 1;
+      }
+
       seenIds.add(id);
       importEntries.push({ ...entry, id });
     });
 
     if (!importEntries.length) {
-      setPlaylistImportStatus(`재생목록 ${playlistEntries.length}개를 확인했지만 전부 이미 들어가 있어.`, "done");
-      alert(`재생목록 영상 ${playlistEntries.length}개가 전부 이미 들어가 있어!`);
+      setPlaylistImportStatus(`추가할 영상이 없어. 중복 영상은 추가하지 않기로 했어.`, "done");
+      alert(`추가할 영상이 없어!\n중복 영상은 추가하지 않기로 했어.`);
       return;
     }
 
@@ -372,7 +385,7 @@ async function addYouTubePlaylist(ytUrl, playlistId) {
       },
       (completed, total) => {
         setPlaylistImportStatus(
-          `영상 정보 불러오는 중... ${completed} / ${total}${duplicateCount ? ` · 중복 ${duplicateCount}개 제외` : ""}`,
+          `영상 정보 불러오는 중... ${completed} / ${total}${duplicateCount ? ` · 중복 확인 ${duplicateCount}개` : ""}`,
           "loading"
         );
       }
@@ -412,7 +425,7 @@ async function addYouTubePlaylist(ytUrl, playlistId) {
 
     const details = [
       `${addedCount}개 추가 완료`,
-      duplicateCount ? `중복 ${duplicateCount}개 제외` : "",
+      duplicateCount ? `중복 확인 ${duplicateCount}개${duplicateAddedCount ? ` · 그중 ${duplicateAddedCount}개 추가` : ""}` : "",
       metadataFailCount ? `제목 정보 ${metadataFailCount}개는 나중에 확인 필요` : "",
       possiblyTruncated ? `⚠ 큰 재생목록은 200개까지만 들어갔을 수 있음` : ""
     ].filter(Boolean);
@@ -460,12 +473,21 @@ async function addSong() {
     if (!allowArchived) return;
   }
 
-  const duplicateMatches = window.AppState?.collectDuplicateSongs?.({
+  const exactDuplicateMatches = window.AppState?.collectExactVideoDuplicates?.({ ytUrl, id }) || [];
+  if (exactDuplicateMatches.length > 0) {
+    const canAddExactDuplicate = typeof window.AppState?.confirmExactVideoDuplicateAdd === "function"
+      ? window.AppState.confirmExactVideoDuplicateAdd(exactDuplicateMatches)
+      : true;
+    if (!canAddExactDuplicate) return;
+  }
+
+  // 기존의 같은-제목 확인은 그대로 유지하되, 같은 영상으로 이미 한 번 물은 경우 두 번 묻지 않는다.
+  const duplicateMatches = exactDuplicateMatches.length > 0 ? [] : (window.AppState?.collectDuplicateSongs?.({
     ytUrl,
     id,
     title: meta.title,
     storeKey: window.AppState?.storeKey || ""
-  }) || [];
+  }) || []);
   if (duplicateMatches.length > 0) {
     const canAddDuplicate = typeof window.AppState?.confirmDuplicateAdd === "function"
       ? window.AppState.confirmDuplicateAdd(duplicateMatches)
@@ -489,6 +511,8 @@ async function addSong() {
     thumbnailHeight: meta.thumbnailHeight || archivedRecord?.thumbnailHeight || 0
   });
 
+  // 같은 영상 묶기에서 위치가 바뀌어도 방금 추가한 항목을 현재 곡으로 유지한다.
+  current = songs.length - 1;
   save();
   showList();
 
@@ -497,7 +521,7 @@ async function addSong() {
     if (el) el.value = "";
   });
 
-  play(songs.length - 1);
+  play(current);
 }
 
 function deleteSong(index) {

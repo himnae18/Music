@@ -61,6 +61,103 @@
     return !isTagPage() && String(S.storeKey || "").startsWith("yt");
   }
 
+  function isSongCollectionPage() {
+    if (isTagPage() || isLyricsPage()) return false;
+    return (S.COUNTRY_STORES || []).some((item) => item.key === S.storeKey);
+  }
+
+  function duplicateVideoKey(song) {
+    const url = S.safeLink(song?.ytUrl);
+    const id = String(song?.id || S.extractID(url) || "").trim();
+    if (id) return `yt:${id}`;
+    return url ? `url:${url}` : "";
+  }
+
+  const expandedDuplicateGroups = new Set();
+  let dragDuplicateGroupKey = "";
+
+  function getDuplicateGroupItems(key, songs = S.songs || []) {
+    if (!key) return [];
+    const result = [];
+    songs.forEach((song, index) => {
+      if (duplicateVideoKey(song) === key) result.push({ song, index });
+    });
+    return result;
+  }
+
+  // 노래 페이지에서 같은 영상은 "가장 위에 있던 영상"을 메인으로 두고 바로 아래에 묶는다.
+  // 데이터 자체도 같은 순서로 정리해 숫자/드래그 순서가 화면과 항상 일치하게 한다.
+  function normalizeSongDuplicateGroups() {
+    if (!isSongCollectionPage()) return false;
+    const songs = S.songs || [];
+    if (songs.length < 2) return false;
+
+    const currentSong = songs[S.current] || null;
+    const byKey = new Map();
+    songs.forEach((song) => {
+      const key = duplicateVideoKey(song);
+      if (!key) return;
+      if (!byKey.has(key)) byKey.set(key, []);
+      byKey.get(key).push(song);
+    });
+
+    const used = new Set();
+    const next = [];
+    songs.forEach((song) => {
+      const key = duplicateVideoKey(song);
+      if (!key) {
+        next.push(song);
+        return;
+      }
+      if (used.has(key)) return;
+      used.add(key);
+      next.push(...(byKey.get(key) || [song]));
+    });
+
+    const changed = next.some((song, index) => song !== songs[index]);
+    if (!changed) return false;
+
+    songs.splice(0, songs.length, ...next);
+    if (currentSong) {
+      const nextCurrent = songs.indexOf(currentSong);
+      if (nextCurrent >= 0) S.current = nextCurrent;
+    }
+    S.save();
+    return true;
+  }
+
+  function buildSongDuplicateGroups() {
+    const groups = [];
+    const seen = new Set();
+    const songs = S.songs || [];
+
+    songs.forEach((song, index) => {
+      const key = duplicateVideoKey(song);
+      if (!key) {
+        groups.push({ key: `single:${index}`, duplicateKey: "", items: [{ song, index }] });
+        return;
+      }
+      if (seen.has(key)) return;
+      seen.add(key);
+      groups.push({ key, duplicateKey: key, items: getDuplicateGroupItems(key, songs) });
+    });
+    return groups;
+  }
+
+  function bindDuplicateGroupToggles(list) {
+    list?.querySelectorAll?.("[data-duplicate-toggle]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const key = decodeURIComponent(button.getAttribute("data-duplicate-toggle") || "");
+        if (!key) return;
+        if (expandedDuplicateGroups.has(key)) expandedDuplicateGroups.delete(key);
+        else expandedDuplicateGroups.add(key);
+        showList();
+      });
+    });
+  }
+
   function songIdentity(song) {
     const url = S.safeLink(song?.ytUrl);
     return {
@@ -421,24 +518,21 @@
     const id = S.safeText(song.id || S.extractID(ytUrl));
     if (!ytUrl || !id) return false;
 
-    const arr = getFivePSongs();
-    const already = arr.some((item) => {
-      const itemUrl = S.safeLink(item?.ytUrl || "");
-      const itemId = S.safeText(item?.id || S.extractID(itemUrl));
-      return (id && itemId && id === itemId) || (ytUrl && itemUrl && ytUrl === itemUrl);
-    });
-
-    if (!already) {
-      const clean = S.cleanSong ? S.cleanSong({
-        ...song,
-        ytUrl,
-        id,
-        tags: S.normalizeTags(song.tags),
-        title: song.title || "제목 없음"
-      }) : song;
-      arr.push(clean);
-      S.writeStorage("yt5pVideos", arr);
+    const exactDuplicates = S.collectExactVideoDuplicates ? S.collectExactVideoDuplicates({ ytUrl, id }) : [];
+    if (exactDuplicates.length > 0 && typeof S.confirmExactVideoDuplicateAdd === "function" && !S.confirmExactVideoDuplicateAdd(exactDuplicates)) {
+      return false;
     }
+
+    const arr = getFivePSongs();
+    const clean = S.cleanSong ? S.cleanSong({
+      ...song,
+      ytUrl,
+      id,
+      tags: S.normalizeTags(song.tags),
+      title: song.title || "제목 없음"
+    }) : song;
+    arr.push(clean);
+    S.writeStorage("yt5pVideos", arr);
 
     refreshFivePViewAfterStorageChange();
     return true;
@@ -450,24 +544,21 @@
     const id = S.safeText(song.id || S.extractID(ytUrl));
     if (!ytUrl || !id) return false;
 
-    const arr = getSixPSongs();
-    const already = arr.some((item) => {
-      const itemUrl = S.safeLink(item?.ytUrl || "");
-      const itemId = S.safeText(item?.id || S.extractID(itemUrl));
-      return (id && itemId && id === itemId) || (ytUrl && itemUrl && ytUrl === itemUrl);
-    });
-
-    if (!already) {
-      const clean = S.cleanSong ? S.cleanSong({
-        ...song,
-        ytUrl,
-        id,
-        tags: S.normalizeTags(song.tags),
-        title: song.title || "제목 없음"
-      }) : song;
-      arr.push(clean);
-      S.writeStorage("yt6pVideos", arr);
+    const exactDuplicates = S.collectExactVideoDuplicates ? S.collectExactVideoDuplicates({ ytUrl, id }) : [];
+    if (exactDuplicates.length > 0 && typeof S.confirmExactVideoDuplicateAdd === "function" && !S.confirmExactVideoDuplicateAdd(exactDuplicates)) {
+      return false;
     }
+
+    const arr = getSixPSongs();
+    const clean = S.cleanSong ? S.cleanSong({
+      ...song,
+      ytUrl,
+      id,
+      tags: S.normalizeTags(song.tags),
+      title: song.title || "제목 없음"
+    }) : song;
+    arr.push(clean);
+    S.writeStorage("yt6pVideos", arr);
 
     refreshSixPViewAfterStorageChange();
     return true;
@@ -486,12 +577,29 @@
       return false;
     }
 
-    const duplicates = S.collectDuplicateSongs ? S.collectDuplicateSongs({
+    let exactDuplicates = S.collectExactVideoDuplicates ? S.collectExactVideoDuplicates({ ytUrl, id }) : [];
+    // 5P에서 현재 페이지로 "이동"할 때는 곧 지워질 5P 원본 1개는 중복으로 세지 않는다.
+    let skippedFivePSource = false;
+    const sourceFivePIndex = Number(song.fivePIndex);
+    exactDuplicates = exactDuplicates.filter((item) => {
+      if (item.storeKey !== "yt5pVideos") return true;
+      if (Number.isInteger(sourceFivePIndex) && item.index === sourceFivePIndex) return false;
+      if (!Number.isInteger(sourceFivePIndex) && !skippedFivePSource) {
+        skippedFivePSource = true;
+        return false;
+      }
+      return true;
+    });
+    if (exactDuplicates.length > 0 && typeof S.confirmExactVideoDuplicateAdd === "function" && !S.confirmExactVideoDuplicateAdd(exactDuplicates)) {
+      return false;
+    }
+
+    const duplicates = exactDuplicates.length > 0 ? [] : (S.collectDuplicateSongs ? S.collectDuplicateSongs({
       ytUrl,
       id,
       title: song.title,
       storeKey: S.storeKey
-    }) : [];
+    }) : []);
 
     if (duplicates.length > 0 && typeof S.confirmDuplicateAdd === "function" && !S.confirmDuplicateAdd(duplicates)) {
       return false;
@@ -528,12 +636,29 @@
       return false;
     }
 
-    const duplicates = S.collectDuplicateSongs ? S.collectDuplicateSongs({
+    let exactDuplicates = S.collectExactVideoDuplicates ? S.collectExactVideoDuplicates({ ytUrl, id }) : [];
+    // 6P에서 현재 페이지로 "이동"할 때는 곧 지워질 6P 원본 1개는 중복으로 세지 않는다.
+    let skippedSixPSource = false;
+    const sourceSixPIndex = Number(song.sixPIndex);
+    exactDuplicates = exactDuplicates.filter((item) => {
+      if (item.storeKey !== "yt6pVideos") return true;
+      if (Number.isInteger(sourceSixPIndex) && item.index === sourceSixPIndex) return false;
+      if (!Number.isInteger(sourceSixPIndex) && !skippedSixPSource) {
+        skippedSixPSource = true;
+        return false;
+      }
+      return true;
+    });
+    if (exactDuplicates.length > 0 && typeof S.confirmExactVideoDuplicateAdd === "function" && !S.confirmExactVideoDuplicateAdd(exactDuplicates)) {
+      return false;
+    }
+
+    const duplicates = exactDuplicates.length > 0 ? [] : (S.collectDuplicateSongs ? S.collectDuplicateSongs({
       ytUrl,
       id,
       title: song.title,
       storeKey: S.storeKey
-    }) : [];
+    }) : []);
 
     if (duplicates.length > 0 && typeof S.confirmDuplicateAdd === "function" && !S.confirmDuplicateAdd(duplicates)) {
       return false;
@@ -1072,6 +1197,8 @@
       return;
     }
 
+    if (isSongCollectionPage()) normalizeSongDuplicateGroups();
+
     const previousPlaylist = list.querySelector(".playlist");
     const previousScrollTop = previousPlaylist ? previousPlaylist.scrollTop : 0;
 
@@ -1090,11 +1217,10 @@
       return;
     }
 
-    let html = `<div class="playlist">`;
-
-    filtered.forEach(({ song: s, index: i }, order) => {
+    const renderSongRow = (s, i, order, options = {}) => {
       const thumb = s.id ? `https://i.ytimg.com/vi/${s.id}/hqdefault.jpg` : "";
-      const active = i === S.current ? " active" : "";
+      const groupHasCurrent = !!options.groupHasCurrent;
+      const active = (i === S.current || (options.isGroupMain && groupHasCurrent && !options.expanded)) ? " active" : "";
       const lyricsStatusClass = isLyricsPage()
         ? (s.lyricsPageHasLyrics ? " lyrics-has-text" : " lyrics-no-text")
         : "";
@@ -1112,24 +1238,44 @@
             onclick="event.stopPropagation(); playMr(${i});">
             ${statusLabel}
           </button>`;
+
+      const duplicateCount = Number(options.duplicateCount || 0);
+      const duplicateToggleHTML = options.isGroupMain && duplicateCount > 0
+        ? `<button type="button" class="duplicate-group-toggle" data-duplicate-toggle="${S.escapeHTML(encodeURIComponent(options.duplicateKey || ""))}">
+            <span class="duplicate-group-arrow">${options.expanded ? "▲" : "▼"}</span>
+            같은 영상 ${duplicateCount}개 더
+          </button>`
+        : (options.isDuplicateChild ? `<span class="duplicate-child-badge">같은 영상</span>` : "");
+
       const subText = [S.safeText(s.author || ""), sourceBadge].filter(Boolean).join(" · ");
+      const subHTML = `<div class="pl-sub">${S.escapeHTML(subText)}${duplicateToggleHTML}</div>`;
 
-      const dragAttributes = isLyricsPage()
-        ? `draggable="false"`
-        : `draggable="true" ondragstart="onDragStart(event, ${i})" ondragover="onDragOver(event)" ondrop="onDrop(event, ${i})"`;
-      const handleHTML = isLyricsPage()
-        ? ""
-        : `<div class="pl-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation();"><span></span><span></span></div>`;
+      let dragAttributes = `draggable="true" ondragstart="onDragStart(event, ${i})" ondragover="onDragOver(event)" ondrop="onDrop(event, ${i})"`;
+      let handleHTML = `<div class="pl-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation();"><span></span><span></span></div>`;
+      if (isLyricsPage()) {
+        dragAttributes = `draggable="false"`;
+        handleHTML = "";
+      } else if (options.isDuplicateChild) {
+        // 같은 영상의 하위 항목은 메인과 함께 움직이므로 따로 끌지 않는다.
+        dragAttributes = `draggable="false" ondragover="onDragOver(event)" ondrop="onDrop(event, ${i})"`;
+        handleHTML = `<div class="pl-handle duplicate-child-handle" title="메인 영상을 끌면 같이 이동해"><span></span><span></span></div>`;
+      } else if (options.isGroupMain && duplicateCount > 0) {
+        handleHTML = `<div class="pl-handle duplicate-group-handle" title="같은 영상 묶음 전체를 드래그" onclick="event.stopPropagation();"><span></span><span></span></div>`;
+      }
 
-      html += `
-        <div class="pl-item${active}${lyricsStatusClass}"
+      const rowClass = `${options.isGroupMain && duplicateCount > 0 ? " duplicate-group-main" : ""}${options.isDuplicateChild ? " duplicate-child" : ""}`;
+      const displayIndex = isSongCollectionPage() ? i + 1 : order + 1;
+      const playing = i === S.current || (options.isGroupMain && groupHasCurrent && !options.expanded);
+
+      return `
+        <div class="pl-item${active}${lyricsStatusClass}${rowClass}"
           ${dragAttributes}
           onclick="play(${i})">
 
           <div class="pl-left">
-            <div class="pl-index">${order + 1}</div>
+            <div class="pl-index">${displayIndex}</div>
             ${handleHTML}
-            <div class="pl-playing">${i === S.current ? "▶" : ""}</div>
+            <div class="pl-playing">${playing ? "▶" : ""}</div>
           </div>
 
           <div class="pl-thumb">
@@ -1138,16 +1284,57 @@
 
           <div class="pl-meta">
             <div class="pl-title">${S.escapeHTML(s.title || "제목 없음")}</div>
-            <div class="pl-sub">${S.escapeHTML(subText)}</div>
+            ${subHTML}
           </div>
 
 ${actionButtonHTML}
         </div>
       `;
-    });
+    };
+
+    let html = `<div class="playlist">`;
+
+    if (isSongCollectionPage()) {
+      const groups = buildSongDuplicateGroups().filter((group) => {
+        if (!String(pageSearchQuery || "").trim()) return true;
+        return group.items.some(({ song }) => S.songMatchesSearch ? S.songMatchesSearch(song, pageSearchQuery) : true);
+      });
+
+      groups.forEach((group, groupOrder) => {
+        const main = group.items[0];
+        if (!main) return;
+        const duplicateCount = Math.max(0, group.items.length - 1);
+        const expanded = duplicateCount > 0 && expandedDuplicateGroups.has(group.duplicateKey);
+        const groupHasCurrent = group.items.some(({ index }) => index === S.current);
+
+        html += renderSongRow(main.song, main.index, groupOrder, {
+          isGroupMain: duplicateCount > 0,
+          duplicateCount,
+          duplicateKey: group.duplicateKey,
+          expanded,
+          groupHasCurrent
+        });
+
+        if (expanded) {
+          group.items.slice(1).forEach(({ song, index }, childOrder) => {
+            html += renderSongRow(song, index, groupOrder + childOrder + 1, {
+              isDuplicateChild: true,
+              duplicateKey: group.duplicateKey,
+              expanded: true,
+              groupHasCurrent
+            });
+          });
+        }
+      });
+    } else {
+      filtered.forEach(({ song: s, index: i }, order) => {
+        html += renderSongRow(s, i, order);
+      });
+    }
 
     html += `</div>`;
     list.innerHTML = html;
+    bindDuplicateGroupToggles(list);
 
     const nextPlaylist = list.querySelector(".playlist");
     if (nextPlaylist) nextPlaylist.scrollTop = previousScrollTop;
@@ -1178,7 +1365,7 @@ ${actionButtonHTML}
   }
 
   function normalizeDrawerTab(tab) {
-    return ["lyrics", "ai", "tagdesc", "mr", "videomemo", "original", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
+    return ["lyrics", "tagdesc", "mr", "videomemo", "original", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
   }
 
   function normalizeLyricsSubTab(tab) {
@@ -1818,7 +2005,6 @@ ${actionButtonHTML}
     const mediaEl = document.getElementById("lyricsNowMedia");
     const tagEl = document.getElementById("lyricsNowTags");
     const tabLyrics = document.getElementById("tabLyrics");
-    const tabAi = document.getElementById("tabAi");
     const tabTagDesc = document.getElementById("tabTagDesc");
     const tabMr = document.getElementById("tabMr");
     const tabOriginal = document.getElementById("tabOriginal");
@@ -1840,7 +2026,6 @@ ${actionButtonHTML}
     if (isTagPage() && activeTab === "mr") activeTab = "videomemo";
 
     setTabClass(tabLyrics);
-    if (tabAi) setTabClass(tabAi);
     if (tabTagDesc) setTabClass(tabTagDesc);
     setTabClass(tabMr);
     setTabClass(tabOriginal);
@@ -1859,18 +2044,6 @@ ${actionButtonHTML}
     }
     bindFivePTabDrop();
     bindSixPTabDrop();
-
-    if (activeTab === "ai" && tabAi) {
-      if (headTitle) headTitle.textContent = "AI 읽기";
-      titleEl.textContent = s ? `${S.safeText(s.title || "제목 없음")} - AI 읽기` : "AI 영상 읽기";
-      if (tagEl && !s) tagEl.innerHTML = "";
-      textEl.style.display = "none";
-      mediaEl.style.display = "block";
-      tabAi.classList.add("tab-active");
-      mediaEl.innerHTML = window.LocalVideoAI?.panelHTML?.(s) || `<p>AI 모듈을 불러오지 못했어.</p>`;
-      window.LocalVideoAI?.bindPanel?.({ song: s });
-      return;
-    }
 
     if (activeTab === "fivep" && tabFiveP) {
       if (headTitle) headTitle.textContent = "5P";
@@ -1953,7 +2126,6 @@ ${actionButtonHTML}
     if (tagEl) tagEl.innerHTML = songTagsHTML(s, "drawer");
 
     if (!isTagPage()) tabLyrics.classList.add("tab-ready");
-    if (tabAi) tabAi.classList.add("tab-ready");
     if (tabTagDesc) tabTagDesc.classList.add("tab-ready");
     tabMr.classList.add("tab-ready");
     if (!isTagPage()) tabOriginal.classList.add("tab-ready");
@@ -2138,9 +2310,19 @@ ${actionButtonHTML}
 
   function onDragStart(e, index) {
     S.dragIndex = index;
+    dragDuplicateGroupKey = "";
     e.dataTransfer.effectAllowed = "copyMove";
     const song = Array.isArray(S.songs) ? S.songs[index] : null;
     if (song) {
+      if (isSongCollectionPage()) {
+        const key = duplicateVideoKey(song);
+        const group = getDuplicateGroupItems(key);
+        if (key && group.length > 1 && group[0]?.index === index) {
+          dragDuplicateGroupKey = key;
+          e.dataTransfer.setData("application/x-song-duplicate-group", key);
+        }
+      }
+
       const raw = serializeLibrarySong(song, index);
       e.dataTransfer.setData("application/x-library-song", raw);
       const url = S.safeLink(song.ytUrl || "");
@@ -2200,9 +2382,42 @@ ${actionButtonHTML}
     }
 
     const dragIndex = S.dragIndex;
-    if (dragIndex === null || dragIndex === dropIndex) return;
+    if (dragIndex === null || dragIndex === dropIndex) {
+      dragDuplicateGroupKey = "";
+      return;
+    }
 
     const songs = S.songs;
+
+    // 노래 페이지의 메인 중복 영상을 끌면 같은 영상 묶음 전체를 한 덩어리로 이동한다.
+    // 드롭한 항목 "바로 앞"에 넣기 때문에 아래로 끌어도 중간 항목들이 자연스럽게 위로 밀린다.
+    if (isSongCollectionPage() && dragDuplicateGroupKey) {
+      const groupItems = getDuplicateGroupItems(dragDuplicateGroupKey, songs);
+      const dropSong = songs[dropIndex] || null;
+      const groupSongs = groupItems.map((item) => item.song);
+      if (dropSong && !groupSongs.includes(dropSong) && groupSongs.length > 1) {
+        const currentSong = songs[S.current] || null;
+        for (let i = songs.length - 1; i >= 0; i--) {
+          if (duplicateVideoKey(songs[i]) === dragDuplicateGroupKey) songs.splice(i, 1);
+        }
+        let insertIndex = dropSong ? songs.indexOf(dropSong) : songs.length;
+        if (insertIndex < 0) insertIndex = songs.length;
+        songs.splice(insertIndex, 0, ...groupSongs);
+        if (currentSong) {
+          const nextCurrent = songs.indexOf(currentSong);
+          if (nextCurrent >= 0) S.current = nextCurrent;
+        }
+      }
+
+      dragDuplicateGroupKey = "";
+      S.dragIndex = null;
+      S.save();
+      showList();
+      updateLyricsDrawer();
+      renderTagTools();
+      return;
+    }
+
     const moved = songs.splice(dragIndex, 1)[0];
     songs.splice(dropIndex, 0, moved);
 
@@ -2210,6 +2425,7 @@ ${actionButtonHTML}
     else if (dragIndex < S.current && dropIndex >= S.current) S.current--;
     else if (dragIndex > S.current && dropIndex <= S.current) S.current++;
 
+    dragDuplicateGroupKey = "";
     S.dragIndex = null;
     S.save();
     showList();
@@ -2303,7 +2519,6 @@ ${actionButtonHTML}
 
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("tabLyrics")?.addEventListener("click", () => setTab("lyrics"));
-    document.getElementById("tabAi")?.addEventListener("click", () => setTab("ai"));
     document.getElementById("tabTagDesc")?.addEventListener("click", () => setTab("tagdesc"));
     document.getElementById("tabMr")?.addEventListener("click", () => setTab(isTagPage() ? "videomemo" : "mr"));
     document.getElementById("tabOriginal")?.addEventListener("click", () => setTab("original"));

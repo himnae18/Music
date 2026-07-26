@@ -1221,6 +1221,51 @@ ${text}` : text;
     );
   }
 
+  // 새 기능: 페이지 종류와 상관없이 "완전히 같은 유튜브 영상"이 이미 있는지 확인한다.
+  // 기존 제목 중복 확인은 그대로 두고, 영상 ID/링크가 같은 경우만 전역으로 한 번 더 확인한다.
+  function collectExactVideoDuplicates({ ytUrl = "", id = "" } = {}) {
+    const cleanUrl = safeLink(ytUrl);
+    const cleanId = safeText(id) || extractID(cleanUrl);
+    if (!cleanUrl && !cleanId) return [];
+
+    const result = [];
+    ALL_STORES.forEach((collection) => {
+      cleanSongArray(readStorage(collection.key)).forEach((song, index) => {
+        const songUrl = safeLink(song?.ytUrl);
+        const songId = safeText(song?.id) || extractID(songUrl);
+        const sameVideo = !!((cleanId && songId && cleanId === songId) || (cleanUrl && songUrl && cleanUrl === songUrl));
+        if (!sameVideo) return;
+        result.push({
+          song,
+          index,
+          storeKey: collection.key,
+          store: collection,
+          sameLink: true,
+          sameTitle: false
+        });
+      });
+    });
+    return result;
+  }
+
+  function confirmExactVideoDuplicateAdd(duplicates = []) {
+    if (!Array.isArray(duplicates) || duplicates.length === 0) return true;
+    if (typeof window.confirm !== "function") return true;
+
+    const first = duplicates[0];
+    const title = safeText(first?.song?.title) || "제목 없음";
+    const places = [...new Set(duplicates.map((item) => safeText(item?.store?.label)).filter(Boolean))];
+    const placeText = places.slice(0, 3).join(", ") + (places.length > 3 ? ` 외 ${places.length - 3}곳` : "");
+    const countText = duplicates.length > 1 ? ` (${duplicates.length}개 있음)` : "";
+
+    return window.confirm(
+      `이미 추가된 똑같은 영상이 있어${countText}.\n\n` +
+      `- 기존 영상: ${title}\n` +
+      `- 위치: ${placeText || "다른 목록"}\n\n` +
+      `그래도 추가할까?`
+    );
+  }
+
   async function addVideoToStoreWithTags({ ytUrl, storeKey: wantedStoreKey, tags = [], mr = "", original = "", lyrics = "" } = {}) {
     const cleanUrl = safeLink(ytUrl);
     const id = extractID(cleanUrl);
@@ -1236,7 +1281,15 @@ ${text}` : text;
       if (!allowArchived) return { ok: false, cancelled: true, duplicate: true, archived: true, record: archivedRecord, error: "이전에 추가했던 영상이라 취소했어." };
     }
 
-    const duplicates = collectDuplicateSongs({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
+    const exactDuplicates = collectExactVideoDuplicates({ ytUrl: cleanUrl, id });
+    if (exactDuplicates.length > 0 && !confirmExactVideoDuplicateAdd(exactDuplicates)) {
+      return { ok: false, cancelled: true, duplicate: true, duplicates: exactDuplicates, error: "중복 추가를 취소했어." };
+    }
+
+    // 기존의 "같은 제목" 중복 확인도 유지한다. 같은 영상으로 이미 확인한 경우에는 두 번 묻지 않는다.
+    const duplicates = exactDuplicates.length > 0
+      ? []
+      : collectDuplicateSongs({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
     if (duplicates.length > 0 && !confirmDuplicateAdd(duplicates)) {
       return { ok: false, cancelled: true, duplicate: true, duplicates, error: "중복 추가를 취소했어." };
     }
@@ -1271,7 +1324,7 @@ ${text}` : text;
       current = index;
     }
 
-    return { ok: true, storeKey: targetStore.key, store: targetStore, index, song: arr[index], updatedExisting: false, duplicateAllowed: duplicates.length > 0 || !!archivedRecord, archivedRecord };
+    return { ok: true, storeKey: targetStore.key, store: targetStore, index, song: arr[index], updatedExisting: false, duplicateAllowed: exactDuplicates.length > 0 || duplicates.length > 0 || !!archivedRecord, archivedRecord };
   }
 
   function getAllSongs() {
@@ -1327,6 +1380,8 @@ ${text}` : text;
     normalizeDuplicateTitle,
     collectDuplicateSongs,
     confirmDuplicateAdd,
+    collectExactVideoDuplicates,
+    confirmExactVideoDuplicateAdd,
     normalizeTag,
     normalizeTags,
     normalizeVideoAspect,
