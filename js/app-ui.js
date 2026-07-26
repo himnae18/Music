@@ -1178,7 +1178,7 @@ ${actionButtonHTML}
   }
 
   function normalizeDrawerTab(tab) {
-    return ["lyrics", "tagdesc", "mr", "videomemo", "original", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
+    return ["lyrics", "ai", "tagdesc", "mr", "videomemo", "original", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
   }
 
   function normalizeLyricsSubTab(tab) {
@@ -1818,6 +1818,7 @@ ${actionButtonHTML}
     const mediaEl = document.getElementById("lyricsNowMedia");
     const tagEl = document.getElementById("lyricsNowTags");
     const tabLyrics = document.getElementById("tabLyrics");
+    const tabAi = document.getElementById("tabAi");
     const tabTagDesc = document.getElementById("tabTagDesc");
     const tabMr = document.getElementById("tabMr");
     const tabOriginal = document.getElementById("tabOriginal");
@@ -1839,6 +1840,7 @@ ${actionButtonHTML}
     if (isTagPage() && activeTab === "mr") activeTab = "videomemo";
 
     setTabClass(tabLyrics);
+    if (tabAi) setTabClass(tabAi);
     if (tabTagDesc) setTabClass(tabTagDesc);
     setTabClass(tabMr);
     setTabClass(tabOriginal);
@@ -1857,6 +1859,18 @@ ${actionButtonHTML}
     }
     bindFivePTabDrop();
     bindSixPTabDrop();
+
+    if (activeTab === "ai" && tabAi) {
+      if (headTitle) headTitle.textContent = "AI 읽기";
+      titleEl.textContent = s ? `${S.safeText(s.title || "제목 없음")} - AI 읽기` : "AI 영상 읽기";
+      if (tagEl && !s) tagEl.innerHTML = "";
+      textEl.style.display = "none";
+      mediaEl.style.display = "block";
+      tabAi.classList.add("tab-active");
+      mediaEl.innerHTML = window.LocalVideoAI?.panelHTML?.(s) || `<p>AI 모듈을 불러오지 못했어.</p>`;
+      window.LocalVideoAI?.bindPanel?.({ song: s });
+      return;
+    }
 
     if (activeTab === "fivep" && tabFiveP) {
       if (headTitle) headTitle.textContent = "5P";
@@ -1939,6 +1953,7 @@ ${actionButtonHTML}
     if (tagEl) tagEl.innerHTML = songTagsHTML(s, "drawer");
 
     if (!isTagPage()) tabLyrics.classList.add("tab-ready");
+    if (tabAi) tabAi.classList.add("tab-ready");
     if (tabTagDesc) tabTagDesc.classList.add("tab-ready");
     tabMr.classList.add("tab-ready");
     if (!isTagPage()) tabOriginal.classList.add("tab-ready");
@@ -2288,6 +2303,7 @@ ${actionButtonHTML}
 
   document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("tabLyrics")?.addEventListener("click", () => setTab("lyrics"));
+    document.getElementById("tabAi")?.addEventListener("click", () => setTab("ai"));
     document.getElementById("tabTagDesc")?.addEventListener("click", () => setTab("tagdesc"));
     document.getElementById("tabMr")?.addEventListener("click", () => setTab(isTagPage() ? "videomemo" : "mr"));
     document.getElementById("tabOriginal")?.addEventListener("click", () => setTab("original"));
