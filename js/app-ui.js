@@ -66,11 +66,11 @@
     return (S.COUNTRY_STORES || []).some((item) => item.key === S.storeKey);
   }
 
-  function duplicateVideoKey(song) {
-    const url = S.safeLink(song?.ytUrl);
-    const id = String(song?.id || S.extractID(url) || "").trim();
-    if (id) return `yt:${id}`;
-    return url ? `url:${url}` : "";
+  // 노래 페이지의 "같은 노래" 묶음은 오직 제목태그만 기준으로 판단한다.
+  // 영상 ID/유튜브 링크/제목 문자열이 같아도 제목태그가 없거나 다르면 묶지 않는다.
+  function duplicateSongTitleTagKey(song) {
+    const titleTag = typeof S.getSongTitleTag === "function" ? String(S.getSongTitleTag(song) || "").trim() : "";
+    return titleTag ? `title-tag:${titleTag}` : "";
   }
 
   const expandedDuplicateGroups = new Set();
@@ -80,12 +80,12 @@
     if (!key) return [];
     const result = [];
     songs.forEach((song, index) => {
-      if (duplicateVideoKey(song) === key) result.push({ song, index });
+      if (duplicateSongTitleTagKey(song) === key) result.push({ song, index });
     });
     return result;
   }
 
-  // 노래 페이지에서 같은 영상은 "가장 위에 있던 영상"을 메인으로 두고 바로 아래에 묶는다.
+  // 노래 페이지에서 같은 제목태그를 가진 곡은 "가장 위에 있던 곡"을 메인으로 두고 바로 아래에 묶는다.
   // 데이터 자체도 같은 순서로 정리해 숫자/드래그 순서가 화면과 항상 일치하게 한다.
   function normalizeSongDuplicateGroups() {
     if (!isSongCollectionPage()) return false;
@@ -95,7 +95,7 @@
     const currentSong = songs[S.current] || null;
     const byKey = new Map();
     songs.forEach((song) => {
-      const key = duplicateVideoKey(song);
+      const key = duplicateSongTitleTagKey(song);
       if (!key) return;
       if (!byKey.has(key)) byKey.set(key, []);
       byKey.get(key).push(song);
@@ -104,7 +104,7 @@
     const used = new Set();
     const next = [];
     songs.forEach((song) => {
-      const key = duplicateVideoKey(song);
+      const key = duplicateSongTitleTagKey(song);
       if (!key) {
         next.push(song);
         return;
@@ -132,7 +132,7 @@
     const songs = S.songs || [];
 
     songs.forEach((song, index) => {
-      const key = duplicateVideoKey(song);
+      const key = duplicateSongTitleTagKey(song);
       if (!key) {
         groups.push({ key: `single:${index}`, duplicateKey: "", items: [{ song, index }] });
         return;
@@ -1243,9 +1243,9 @@
       const duplicateToggleHTML = options.isGroupMain && duplicateCount > 0
         ? `<button type="button" class="duplicate-group-toggle" data-duplicate-toggle="${S.escapeHTML(encodeURIComponent(options.duplicateKey || ""))}">
             <span class="duplicate-group-arrow">${options.expanded ? "▲" : "▼"}</span>
-            같은 영상 ${duplicateCount}개 더
+            같은 노래 ${duplicateCount}개 더
           </button>`
-        : (options.isDuplicateChild ? `<span class="duplicate-child-badge">같은 영상</span>` : "");
+        : (options.isDuplicateChild ? `<span class="duplicate-child-badge">같은 노래</span>` : "");
 
       const subText = [S.safeText(s.author || ""), sourceBadge].filter(Boolean).join(" · ");
       const subHTML = `<div class="pl-sub">${S.escapeHTML(subText)}${duplicateToggleHTML}</div>`;
@@ -1256,11 +1256,11 @@
         dragAttributes = `draggable="false"`;
         handleHTML = "";
       } else if (options.isDuplicateChild) {
-        // 같은 영상의 하위 항목은 메인과 함께 움직이므로 따로 끌지 않는다.
+        // 같은 제목태그의 하위 항목은 메인과 함께 움직이므로 따로 끌지 않는다.
         dragAttributes = `draggable="false" ondragover="onDragOver(event)" ondrop="onDrop(event, ${i})"`;
         handleHTML = `<div class="pl-handle duplicate-child-handle" title="메인 영상을 끌면 같이 이동해"><span></span><span></span></div>`;
       } else if (options.isGroupMain && duplicateCount > 0) {
-        handleHTML = `<div class="pl-handle duplicate-group-handle" title="같은 영상 묶음 전체를 드래그" onclick="event.stopPropagation();"><span></span><span></span></div>`;
+        handleHTML = `<div class="pl-handle duplicate-group-handle" title="같은 노래 묶음 전체를 드래그" onclick="event.stopPropagation();"><span></span><span></span></div>`;
       }
 
       const rowClass = `${options.isGroupMain && duplicateCount > 0 ? " duplicate-group-main" : ""}${options.isDuplicateChild ? " duplicate-child" : ""}`;
@@ -2315,7 +2315,7 @@ ${actionButtonHTML}
     const song = Array.isArray(S.songs) ? S.songs[index] : null;
     if (song) {
       if (isSongCollectionPage()) {
-        const key = duplicateVideoKey(song);
+        const key = duplicateSongTitleTagKey(song);
         const group = getDuplicateGroupItems(key);
         if (key && group.length > 1 && group[0]?.index === index) {
           dragDuplicateGroupKey = key;
@@ -2389,7 +2389,7 @@ ${actionButtonHTML}
 
     const songs = S.songs;
 
-    // 노래 페이지의 메인 중복 영상을 끌면 같은 영상 묶음 전체를 한 덩어리로 이동한다.
+    // 노래 페이지의 메인 곡을 끌면 같은 제목태그 묶음 전체를 한 덩어리로 이동한다.
     // 드롭한 항목 "바로 앞"에 넣기 때문에 아래로 끌어도 중간 항목들이 자연스럽게 위로 밀린다.
     if (isSongCollectionPage() && dragDuplicateGroupKey) {
       const groupItems = getDuplicateGroupItems(dragDuplicateGroupKey, songs);
@@ -2398,7 +2398,7 @@ ${actionButtonHTML}
       if (dropSong && !groupSongs.includes(dropSong) && groupSongs.length > 1) {
         const currentSong = songs[S.current] || null;
         for (let i = songs.length - 1; i >= 0; i--) {
-          if (duplicateVideoKey(songs[i]) === dragDuplicateGroupKey) songs.splice(i, 1);
+          if (duplicateSongTitleTagKey(songs[i]) === dragDuplicateGroupKey) songs.splice(i, 1);
         }
         let insertIndex = dropSong ? songs.indexOf(dropSong) : songs.length;
         if (insertIndex < 0) insertIndex = songs.length;
