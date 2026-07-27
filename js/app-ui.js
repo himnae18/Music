@@ -683,6 +683,79 @@
   }
 
 
+  function bindMusicTagDragSources(root) {
+    if (!root) return;
+    root.querySelectorAll("[data-drag-music-tag]").forEach((chip) => {
+      if (chip.dataset.musicTagDragBound === "1") return;
+      chip.dataset.musicTagDragBound = "1";
+
+      chip.addEventListener("dragstart", (e) => {
+        const tag = S.normalizeTag(chip.getAttribute("data-drag-music-tag") || "");
+        if (!tag || !e.dataTransfer) return;
+        S.dragIndex = null;
+        e.dataTransfer.effectAllowed = "copy";
+        e.dataTransfer.setData("application/x-music-tag", tag);
+        e.dataTransfer.setData("text/plain", `#${tag}`);
+        chip.classList.add("is-tag-dragging");
+      });
+
+      chip.addEventListener("dragend", () => {
+        chip.classList.remove("is-tag-dragging");
+        document.querySelectorAll(".tag-song-drop-over").forEach((el) => el.classList.remove("tag-song-drop-over"));
+      });
+    });
+  }
+
+  function titleTagsPanelHTML() {
+    const titleTags = typeof S.readTitleTags === "function" ? S.readTitleTags() : [];
+    const counts = new Map(S.getTagCounts ? S.getTagCounts("all") : []);
+    return `
+      <div class="title-tags-panel">
+        <div class="title-tags-create">
+          <div class="title-tags-create-row">
+            <input id="drawerTitleTagInput" placeholder="제목태그 만들기" autocomplete="off" />
+            <button id="drawerTitleTagAdd" type="button">추가</button>
+          </div>
+          <p>여기는 <b>제목태그만</b> 모여 있어. 태그를 끌어서 왼쪽 재생목록 영상 위에 놓으면 바로 추가돼.</p>
+        </div>
+        <div class="title-tags-list" id="drawerTitleTagsList">
+          ${titleTags.length ? titleTags.map((tag) => `
+            <span class="title-tag-drag-chip" draggable="true" data-drag-music-tag="${S.escapeHTML(tag)}" title="왼쪽 영상으로 끌어서 태그 추가">
+              <a draggable="false" href="${S.getTagPageUrl(tag)}">#${S.escapeHTML(tag)}</a>
+              <b>${Number(counts.get(tag) || 0)}</b>
+            </span>
+          `).join("") : `<span class="title-tags-empty">아직 제목태그가 없어. 위에서 만들어줘.</span>`}
+        </div>
+      </div>
+    `;
+  }
+
+  function bindTitleTagsPanel() {
+    const panel = document.querySelector(".title-tags-panel");
+    if (!panel) return;
+    const input = panel.querySelector("#drawerTitleTagInput");
+    const addBtn = panel.querySelector("#drawerTitleTagAdd");
+
+    const addTitleTags = () => {
+      const tags = S.normalizeTags(input?.value || "");
+      if (!tags.length) return;
+      tags.forEach((tag) => S.registerTitleTag?.(tag));
+      if (input) input.value = "";
+      updateLyricsDrawer();
+      renderTagTools();
+    };
+
+    addBtn?.addEventListener("click", addTitleTags);
+    input?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addTitleTags();
+      }
+    });
+    bindMusicTagDragSources(panel);
+  }
+
+
   function bindFivePTabDrop() {
     const tab = document.getElementById("tabFiveP");
     if (!tab || tab.dataset.libraryDropBound === "1") return;
@@ -1250,14 +1323,14 @@
       const subText = [S.safeText(s.author || ""), sourceBadge].filter(Boolean).join(" · ");
       const subHTML = `<div class="pl-sub">${S.escapeHTML(subText)}${duplicateToggleHTML}</div>`;
 
-      let dragAttributes = `draggable="true" ondragstart="onDragStart(event, ${i})" ondragover="onDragOver(event)" ondrop="onDrop(event, ${i})"`;
+      let dragAttributes = `draggable="true" ondragstart="onDragStart(event, ${i})" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ${i})"`;
       let handleHTML = `<div class="pl-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation();"><span></span><span></span></div>`;
       if (isLyricsPage()) {
         dragAttributes = `draggable="false"`;
         handleHTML = "";
       } else if (options.isDuplicateChild) {
         // 같은 제목태그의 하위 항목은 메인과 함께 움직이므로 따로 끌지 않는다.
-        dragAttributes = `draggable="false" ondragover="onDragOver(event)" ondrop="onDrop(event, ${i})"`;
+        dragAttributes = `draggable="false" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ${i})"`;
         handleHTML = `<div class="pl-handle duplicate-child-handle" title="메인 영상을 끌면 같이 이동해"><span></span><span></span></div>`;
       } else if (options.isGroupMain && duplicateCount > 0) {
         handleHTML = `<div class="pl-handle duplicate-group-handle" title="같은 노래 묶음 전체를 드래그" onclick="event.stopPropagation();"><span></span><span></span></div>`;
@@ -1365,7 +1438,7 @@ ${actionButtonHTML}
   }
 
   function normalizeDrawerTab(tab) {
-    return ["lyrics", "tagdesc", "mr", "videomemo", "original", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
+    return ["lyrics", "tagdesc", "mr", "videomemo", "original", "titletags", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
   }
 
   function normalizeLyricsSubTab(tab) {
@@ -2008,6 +2081,7 @@ ${actionButtonHTML}
     const tabTagDesc = document.getElementById("tabTagDesc");
     const tabMr = document.getElementById("tabMr");
     const tabOriginal = document.getElementById("tabOriginal");
+    const tabTitleTags = document.getElementById("tabTitleTags");
     const tabFiveP = document.getElementById("tabFiveP");
     const tabSixP = document.getElementById("tabSixP");
     const headTitle = document.querySelector(".lyrics-head-title");
@@ -2029,6 +2103,7 @@ ${actionButtonHTML}
     if (tabTagDesc) setTabClass(tabTagDesc);
     setTabClass(tabMr);
     setTabClass(tabOriginal);
+    if (tabTitleTags) setTabClass(tabTitleTags);
     if (tabFiveP) setTabClass(tabFiveP);
     if (tabSixP) setTabClass(tabSixP);
 
@@ -2036,14 +2111,28 @@ ${actionButtonHTML}
     if (isTagPage()) {
       tabLyrics.hidden = true;
       tabOriginal.hidden = true;
+      if (tabTitleTags) tabTitleTags.hidden = false;
       tabMr.textContent = "영상메모";
     } else {
       tabLyrics.hidden = false;
       tabOriginal.hidden = false;
+      if (tabTitleTags) tabTitleTags.hidden = false;
       tabMr.textContent = "메모";
     }
     bindFivePTabDrop();
     bindSixPTabDrop();
+
+    if (activeTab === "titletags" && tabTitleTags) {
+      if (headTitle) headTitle.textContent = "제목태그";
+      titleEl.textContent = "제목태그 모음";
+      if (tagEl) tagEl.innerHTML = "";
+      textEl.style.display = "none";
+      mediaEl.style.display = "block";
+      tabTitleTags.classList.add("tab-active");
+      mediaEl.innerHTML = titleTagsPanelHTML();
+      bindTitleTagsPanel();
+      return;
+    }
 
     if (activeTab === "fivep" && tabFiveP) {
       if (headTitle) headTitle.textContent = "5P";
@@ -2096,7 +2185,7 @@ ${actionButtonHTML}
         return;
       }
 
-      if (headTitle) headTitle.textContent = isTagPage() ? "태그설명 / 영상메모 / 5P / 6P" : "설명 / 메모 / 기타 / 5P / 6P";
+      if (headTitle) headTitle.textContent = isTagPage() ? "태그설명 / 영상메모 / 태그 / 5P / 6P" : "설명 / 메모 / 기타 / 태그 / 5P / 6P";
       const videoLikePage = isTagPage() || document.body?.dataset?.store?.startsWith("yt");
       titleEl.textContent = videoLikePage ? "재생중인 영상이 없어" : "재생중인 곡이 없어";
       if (tagEl) tagEl.innerHTML = "";
@@ -2116,6 +2205,7 @@ ${actionButtonHTML}
         tabMr.classList.add("tab-disabled-soft");
         tabOriginal.classList.add("tab-disabled-soft");
       }
+      if (tabTitleTags) tabTitleTags.classList.add("tab-ready");
       if (tabFiveP) tabFiveP.classList.add("tab-ready");
       if (tabSixP) tabSixP.classList.add("tab-ready");
       return;
@@ -2129,6 +2219,7 @@ ${actionButtonHTML}
     if (tabTagDesc) tabTagDesc.classList.add("tab-ready");
     tabMr.classList.add("tab-ready");
     if (!isTagPage()) tabOriginal.classList.add("tab-ready");
+    if (tabTitleTags) tabTitleTags.classList.add("tab-ready");
     if (tabFiveP) tabFiveP.classList.add("tab-ready");
     if (tabSixP) tabSixP.classList.add("tab-ready");
 
@@ -2136,6 +2227,17 @@ ${actionButtonHTML}
     mediaEl.style.display = "block";
 
     activeTab = normalizeDrawerTab(activeTab);
+
+    if (activeTab === "titletags" && tabTitleTags) {
+      if (headTitle) headTitle.textContent = "제목태그";
+      titleEl.textContent = "제목태그 모음";
+      if (tagEl) tagEl.innerHTML = "";
+      tabTitleTags.classList.add("tab-active");
+      mediaEl.innerHTML = titleTagsPanelHTML();
+      bindTitleTagsPanel();
+      updateLockUI();
+      return;
+    }
 
     if (activeTab === "fivep" && tabFiveP) {
       if (headTitle) headTitle.textContent = "5P";
@@ -2253,9 +2355,9 @@ ${actionButtonHTML}
           <p class="tag-help">쉼표, 띄어쓰기, #으로 여러 개를 한 번에 넣을 수 있어.</p>
           <div id="currentSongTags" class="tag-cloud small">
             ${currentTags.length ? currentTags.map((tag) => `
-              <span class="tag-edit-chip">
-                <a href="${S.getTagPageUrl(tag)}">#${S.escapeHTML(tag)}</a>
-                <button type="button" data-remove-tag="${S.escapeHTML(tag)}" title="태그 삭제">×</button>
+              <span class="tag-edit-chip tag-drag-source" draggable="true" data-drag-music-tag="${S.escapeHTML(tag)}" title="왼쪽 영상으로 끌어서 태그 추가">
+                <a draggable="false" href="${S.getTagPageUrl(tag)}">#${S.escapeHTML(tag)}</a>
+                <button draggable="false" type="button" data-remove-tag="${S.escapeHTML(tag)}" title="태그 삭제">×</button>
               </span>
             `).join("") : `<span class="tag-empty">현재 곡 태그 없음</span>`}
           </div>
@@ -2306,6 +2408,10 @@ ${actionButtonHTML}
         renderTagTools();
       });
     });
+
+    // 가운데 위 태그창은 제목/노래/강의/일반 등 종류와 상관없이
+    // 현재 붙어 있는 모든 태그를 왼쪽 영상으로 끌어다 넣을 수 있다.
+    bindMusicTagDragSources(holder);
   }
 
   function onDragStart(e, index) {
@@ -2333,8 +2439,16 @@ ${actionButtonHTML}
   function onDragOver(e) {
     e.preventDefault();
     const types = Array.from(e.dataTransfer?.types || []);
-    if (types.includes("application/x-music-tag")) e.dataTransfer.dropEffect = "copy";
-    else e.dataTransfer.dropEffect = "move";
+    if (types.includes("application/x-music-tag")) {
+      e.dataTransfer.dropEffect = "copy";
+      e.currentTarget?.classList?.add("tag-song-drop-over");
+    } else {
+      e.dataTransfer.dropEffect = "move";
+    }
+  }
+
+  function onDragLeave(e) {
+    e.currentTarget?.classList?.remove("tag-song-drop-over");
   }
 
   function addDraggedTagToSong(tag, dropIndex) {
@@ -2355,6 +2469,7 @@ ${actionButtonHTML}
 
   function onDrop(e, dropIndex) {
     e.preventDefault();
+    e.currentTarget?.classList?.remove("tag-song-drop-over");
 
     // 5P 보관함의 영상을 재생목록 항목 위에 놓았을 때는
     // 일반 목록 순서 변경보다 먼저 "현재 페이지로 이동"으로 처리한다.
@@ -2522,6 +2637,7 @@ ${actionButtonHTML}
     document.getElementById("tabTagDesc")?.addEventListener("click", () => setTab("tagdesc"));
     document.getElementById("tabMr")?.addEventListener("click", () => setTab(isTagPage() ? "videomemo" : "mr"));
     document.getElementById("tabOriginal")?.addEventListener("click", () => setTab("original"));
+    document.getElementById("tabTitleTags")?.addEventListener("click", () => setTab("titletags"));
     document.getElementById("tabFiveP")?.addEventListener("click", () => setTab("fivep"));
     document.getElementById("tabSixP")?.addEventListener("click", () => setTab("sixp"));
     document.getElementById("btnDownload")?.addEventListener("click", copyCurrentVideoUrl);
@@ -2551,6 +2667,7 @@ ${actionButtonHTML}
   window.renderTagPlayerSummary = renderTagPlayerSummary;
   window.onDragStart = onDragStart;
   window.onDragOver = onDragOver;
+  window.onDragLeave = onDragLeave;
   window.onDrop = onDrop;
   window.openLyricsDrawer = openLyricsDrawer;
   window.closeLyricsDrawer = closeLyricsDrawer;

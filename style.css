@@ -3931,3 +3931,101 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 }
 .duplicate-child-handle{ opacity:.22; cursor:default; }
 .duplicate-group-handle{ opacity:.75; }
+
+
+/* 20260728: 오른쪽 제목태그 모음 + 태그 드래그해서 재생목록 영상에 넣기 */
+.title-tags-panel{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.title-tags-create{
+  padding:12px;
+  border:1px solid #e3e3e3;
+  border-radius:14px;
+  background:#fff;
+}
+.title-tags-create-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px;
+}
+.title-tags-create-row input{
+  width:100%;
+  min-width:0;
+  margin:0;
+}
+.title-tags-create-row button{
+  margin:0;
+  padding:0 15px;
+  border-radius:12px;
+  background:#333;
+  color:#fff;
+  font-weight:900;
+}
+.title-tags-create p{
+  margin:8px 2px 0;
+  color:#777;
+  font-size:12px;
+  line-height:1.5;
+}
+.title-tags-list{
+  display:flex;
+  flex-wrap:wrap;
+  align-content:flex-start;
+  gap:8px;
+  min-height:70px;
+  padding:12px;
+  border:1px solid #e3e3e3;
+  border-radius:14px;
+  background:#fff;
+}
+.title-tag-drag-chip{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  height:34px;
+  padding:0 8px 0 10px;
+  border:1px solid #d9d9d9;
+  border-radius:999px;
+  background:#fff;
+  cursor:grab;
+  user-select:none;
+}
+.title-tag-drag-chip:active,
+.title-tag-drag-chip.is-tag-dragging,
+.tag-drag-source.is-tag-dragging{
+  cursor:grabbing;
+  opacity:.55;
+}
+.title-tag-drag-chip a{
+  color:#222;
+  text-decoration:none;
+  font-size:12px;
+  font-weight:900;
+}
+.title-tag-drag-chip b{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:20px;
+  height:20px;
+  padding:0 5px;
+  border-radius:999px;
+  background:#efefef;
+  color:#666;
+  font-size:10px;
+}
+.title-tags-empty{
+  color:#999;
+  font-size:13px;
+}
+.tag-drag-source{
+  cursor:grab;
+  user-select:none;
+}
+.pl-item.tag-song-drop-over{
+  outline:3px solid rgba(179,38,71,.28);
+  outline-offset:-3px;
+  background:#fff3f6;
+}
