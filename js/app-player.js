@@ -287,6 +287,20 @@ function focusPlayerArea() {
   try { playerArea.focus({ preventScroll: true }); } catch {}
 }
 
+// 유튜브 iframe이 키보드 포커스를 가져가면 J/L이 유튜브 기본값(10초)으로 동작한다.
+// 플레이어를 클릭한 뒤에도 사이트 단축키(5초)가 계속 적용되도록 포커스를 되돌린다.
+function keepFiveSecondSeekShortcuts() {
+  if (window.__fiveSecondSeekFocusBound) return;
+  window.__fiveSecondSeekFocusBound = true;
+
+  window.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      const iframe = ytPlayer?.getIframe?.();
+      if (iframe && document.activeElement === iframe) focusPlayerArea();
+    }, 0);
+  });
+}
+
 function togglePlayerPlayPause() {
   if (!ytPlayer || typeof ytPlayer.getPlayerState !== "function") return false;
 
@@ -753,7 +767,8 @@ function createYouTubePlayerOnce() {
       playsinline: 1,
       hl: "ko",
       cc_lang_pref: YOUTUBE_CAPTION_LANGUAGE,
-      cc_load_policy: 1
+      cc_load_policy: 1,
+      disablekb: 1
     },
     events: {
       onReady: () => {
@@ -761,6 +776,8 @@ function createYouTubePlayerOnce() {
         playerReady = true;
         apiLoading = false;
         applyKoreanCaptions();
+        keepFiveSecondSeekShortcuts();
+        focusPlayerArea();
         flushPlayerReadyQueue();
       },
       onStateChange: onPlayerStateChange
