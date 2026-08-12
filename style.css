@@ -3985,3 +3985,45 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   outline-offset:-3px;
   background:#fff3f6;
 }
+
+
+/* 재생목록 링크 일괄 추가 상태 */
+.playlist-import-status{
+  margin:10px 2px 0;
+  padding:9px 11px;
+  border-radius:10px;
+  background:#f1f6ff;
+  color:#315a8a;
+  font-size:13px;
+  font-weight:800;
+  line-height:1.45;
+  text-align:left;
+}
+.playlist-import-status[data-state="done"]{
+  background:#eef9f0;
+  color:#26723a;
+}
+.playlist-import-status[data-state="error"]{
+  background:#fff0f0;
+  color:#b12a2a;
+}
+.playlist-import-status[hidden]{ display:none !important; }
+.playlist-import-loader{
+  position:fixed !important;
+  left:-10000px !important;
+  top:-10000px !important;
+  width:2px !important;
+  height:2px !important;
+  overflow:hidden !important;
+  opacity:.01 !important;
+  pointer-events:none !important;
+}
+.add-song-btn:disabled,
+.add-song-row input:disabled{
+  opacity:.6;
+  cursor:wait;
+}
+.playlist-import-status[data-state="warning"]{
+  background:#fff7e8;
+  color:#8b5a00;
+}
