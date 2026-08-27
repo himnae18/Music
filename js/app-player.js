@@ -1120,8 +1120,15 @@ function getModernStoryboardSpec(videoId) {
   if (!id) return null;
   if (modernStoryboardCache.has(id)) return modernStoryboardCache.get(id);
 
+  // IFrame Player의 내부 메타데이터 위치가 브라우저/YouTube 버전에 따라 달라질 수 있다.
+  // 가능한 storyboard spec 위치를 순서대로 확인한다.
   let raw = '';
-  try { raw = String(ytPlayer?.playerInfo?.storyboardFormat || ''); } catch {}
+  const candidates = [];
+  try { candidates.push(ytPlayer?.playerInfo?.storyboardFormat); } catch {}
+  try { candidates.push(ytPlayer?.playerInfo?.storyboards?.playerStoryboardSpecRenderer?.spec); } catch {}
+  try { candidates.push(ytPlayer?.playerInfo?.storyboards?.playerLiveStoryboardSpecRenderer?.spec); } catch {}
+  try { candidates.push(ytPlayer?.getVideoData?.()?.storyboardFormat); } catch {}
+  raw = String(candidates.find(Boolean) || '');
   if (!raw) return null;
 
   try { raw = decodeURIComponent(raw); } catch {}
@@ -1185,6 +1192,23 @@ function getModernStoryboardFrame(videoId, timeMillis) {
   };
 }
 
+function getModernFallbackPreview(videoId, pct) {
+  const id = String(videoId || '').trim();
+  if (!id) return null;
+
+  // YouTube가 모든 iframe에서 storyboardFormat을 노출하는 것은 아니므로,
+  // 그 경우에도 실제 YouTube 자동 생성 썸네일을 시간대별 대체 미리보기로 사용한다.
+  const normalized = clampModernHeatmapNumber(Number(pct) || 0, 0, 100);
+  let index = 1;
+  if (normalized >= 66.666) index = 3;
+  else if (normalized >= 33.333) index = 2;
+
+  return {
+    url: `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mq${index}.jpg`,
+    fallback: true
+  };
+}
+
 function updateModernSeekPreview(event) {
   const wrap = document.querySelector('.player-wrap');
   const controls = wrap?.querySelector('.yt-modern-controls');
@@ -1197,6 +1221,8 @@ function updateModernSeekPreview(event) {
   const x = clampModernHeatmapNumber(Number(event?.clientX) - rect.left, 0, rect.width);
   const pct = (x / rect.width) * 100;
   progressWrap.style.setProperty('--seek-preview-pct', `${pct}%`);
+  preview.classList.toggle('is-left-edge', pct < 12);
+  preview.classList.toggle('is-right-edge', pct > 88);
 
   let duration = 0;
   try { duration = Number(ytPlayer?.getDuration?.()) || 0; } catch {}
@@ -1219,16 +1245,28 @@ function updateModernSeekPreview(event) {
   const picture = preview.querySelector('.yt-modern-seek-preview-picture');
   if (picture) {
     const frame = getModernStoryboardFrame(id, timeMillis);
-    if (frame?.url) {
+    const fallback = frame?.url ? null : getModernFallbackPreview(id, pct);
+    const source = frame || fallback;
+
+    if (source?.url) {
       picture.classList.add('has-storyboard');
-      picture.style.backgroundImage = `url("${String(frame.url).replace(/"/g, '%22')}")`;
-      picture.style.backgroundSize = `${frame.columns * 100}% ${frame.rows * 100}%`;
-      const posX = frame.columns > 1 ? (frame.col / (frame.columns - 1)) * 100 : 0;
-      const posY = frame.rows > 1 ? (frame.row / (frame.rows - 1)) * 100 : 0;
-      picture.style.backgroundPosition = `${posX}% ${posY}%`;
+      picture.classList.toggle('is-fallback', !!source.fallback);
+      picture.style.backgroundImage = `url("${String(source.url).replace(/"/g, '%22')}")`;
+
+      if (frame?.url) {
+        picture.style.backgroundSize = `${frame.columns * 100}% ${frame.rows * 100}%`;
+        const posX = frame.columns > 1 ? (frame.col / (frame.columns - 1)) * 100 : 0;
+        const posY = frame.rows > 1 ? (frame.row / (frame.rows - 1)) * 100 : 0;
+        picture.style.backgroundPosition = `${posX}% ${posY}%`;
+      } else {
+        picture.style.backgroundSize = 'cover';
+        picture.style.backgroundPosition = 'center';
+      }
     } else {
-      picture.classList.remove('has-storyboard');
+      picture.classList.remove('has-storyboard', 'is-fallback');
       picture.style.backgroundImage = '';
+      picture.style.backgroundSize = '';
+      picture.style.backgroundPosition = '';
     }
   }
 }
@@ -1393,19 +1431,73 @@ function ensureModernYouTubeControls() {
 
   const seek = controls.querySelector('.yt-modern-seek');
   const progressWrap = controls.querySelector('.yt-modern-progress-wrap');
-  progressWrap?.addEventListener('pointermove', updateModernSeekPreview, { passive: true });
+  let modernSeekPointerActive = false;
+
+  const getModernSeekPercentFromPointer = (event) => {
+    const rect = progressWrap?.getBoundingClientRect();
+    if (!rect?.width) return 0;
+    const x = clampModernHeatmapNumber(Number(event?.clientX) - rect.left, 0, rect.width);
+    return (x / rect.width) * 100;
+  };
+
+  const applyModernSeekFromPointer = (event, seekVideo = true) => {
+    if (!progressWrap || !seek) return;
+    const pct = getModernSeekPercentFromPointer(event);
+    seek.value = String(Math.max(0, Math.min(1000, Math.round(pct * 10))));
+    setModernRangeFill(seek, pct);
+    updateModernSeekPreview(event);
+
+    let duration = 0;
+    try { duration = Number(ytPlayer?.getDuration?.()) || 0; } catch {}
+    if (duration > 0) {
+      const target = duration * pct / 100;
+      const timeLabel = controls.querySelector('.yt-modern-time');
+      if (timeLabel) timeLabel.textContent = `${formatModernPlayerTime(target)} / ${formatModernPlayerTime(duration)}`;
+      if (seekVideo) {
+        // 첫 클릭(pointerdown)에서 바로 이동시킨다. 두 번째 클릭이 필요하지 않다.
+        try { ytPlayer?.seekTo?.(target, true); } catch {}
+      }
+    }
+  };
+
   progressWrap?.addEventListener('pointerenter', updateModernSeekPreview, { passive: true });
-  seek?.addEventListener('pointerdown', () => { modernPlayerSeeking = true; });
+  progressWrap?.addEventListener('pointermove', (event) => {
+    updateModernSeekPreview(event);
+    if (modernSeekPointerActive) applyModernSeekFromPointer(event, true);
+  }, { passive: true });
+
+  progressWrap?.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 && event.pointerType !== 'touch') return;
+    event.preventDefault();
+    modernSeekPointerActive = true;
+    modernPlayerSeeking = true;
+    try { progressWrap.setPointerCapture?.(event.pointerId); } catch {}
+    applyModernSeekFromPointer(event, true);
+  }, { passive: false });
+
+  const finishModernPointerSeek = (event) => {
+    if (!modernSeekPointerActive) return;
+    applyModernSeekFromPointer(event, true);
+    modernSeekPointerActive = false;
+    modernPlayerSeeking = false;
+    try { progressWrap?.releasePointerCapture?.(event.pointerId); } catch {}
+    scheduleModernControlsHide(700);
+    updateModernPlayerControls();
+  };
+  progressWrap?.addEventListener('pointerup', finishModernPointerSeek, { passive: true });
+  progressWrap?.addEventListener('pointercancel', () => {
+    modernSeekPointerActive = false;
+    modernPlayerSeeking = false;
+    updateModernPlayerControls();
+  }, { passive: true });
+
+  // 숨겨진 range는 진행 상태 보관용으로만 사용한다. 키보드로 값이 바뀌는 경우도 지원.
   seek?.addEventListener('input', () => {
     const pct = Number(seek.value) / 10;
     setModernRangeFill(seek, pct);
-    let duration = 0;
-    try { duration = Number(ytPlayer?.getDuration?.()) || 0; } catch {}
-    const preview = controls.querySelector('.yt-modern-time');
-    if (preview && duration > 0) preview.textContent = `${formatModernPlayerTime(duration * pct / 100)} / ${formatModernPlayerTime(duration)}`;
   });
-  const commitSeek = () => {
-    const pct = Number(seek?.value || 0) / 10;
+  seek?.addEventListener('change', () => {
+    const pct = Number(seek.value || 0) / 10;
     let duration = 0;
     try { duration = Number(ytPlayer?.getDuration?.()) || 0; } catch {}
     if (duration > 0) {
@@ -1413,9 +1505,7 @@ function ensureModernYouTubeControls() {
     }
     modernPlayerSeeking = false;
     updateModernPlayerControls();
-  };
-  seek?.addEventListener('change', commitSeek);
-  seek?.addEventListener('pointerup', commitSeek);
+  });
 
   controls.querySelector('.yt-modern-play')?.addEventListener('click', (e) => { e.stopPropagation(); togglePlayerPlayPause(); updateModernPlayerControls(); });
   controls.querySelector('.yt-modern-prev')?.addEventListener('click', (e) => { e.stopPropagation(); previousSong(); });
@@ -1426,16 +1516,19 @@ function ensureModernYouTubeControls() {
   const volumeInput = controls.querySelector('.yt-modern-volume-range');
   volumeButton?.addEventListener('click', (e) => {
     e.stopPropagation();
+    showModernControls();
     volumeWrap?.classList.toggle('is-open');
     if (!volumeWrap?.classList.contains('is-open')) {
       try {
         if (ytPlayer?.isMuted?.()) ytPlayer.unMute?.(); else ytPlayer?.mute?.();
       } catch {}
+      scheduleModernControlsHide(700);
     }
     updateModernPlayerControls();
   });
   volumeInput?.addEventListener('input', (e) => {
     e.stopPropagation();
+    showModernControls();
     const value = Number(volumeInput.value || 0);
     try {
       ytPlayer?.unMute?.();
@@ -1445,31 +1538,66 @@ function ensureModernYouTubeControls() {
     updateModernPlayerControls();
   });
 
+  volumeInput?.addEventListener('change', () => {
+    scheduleModernControlsHide(700);
+  });
+
   controls.querySelector('.yt-modern-cc')?.addEventListener('click', (e) => { e.stopPropagation(); toggleModernCaptions(); });
   const settingsPanel = controls.querySelector('.yt-modern-settings-panel');
   const settingsButton = controls.querySelector('.yt-modern-settings');
 
   // 유튜브 iframe은 브라우저에 따라 :hover 해제가 늦을 수 있어서
-  // 실제 포인터 위치를 기준으로 커스텀 컨트롤 표시 상태를 직접 관리한다.
-  const showModernControls = () => {
-    wrap.classList.add('modern-controls-visible');
+  // 실제 포인터 위치 + 유휴 시간 기준으로 커스텀 컨트롤 표시 상태를 직접 관리한다.
+  let modernControlsHideTimer = null;
+  const MODERN_CONTROLS_IDLE_MS = 1200;
+
+  const clearModernControlsHideTimer = () => {
+    if (modernControlsHideTimer) {
+      clearTimeout(modernControlsHideTimer);
+      modernControlsHideTimer = null;
+    }
   };
 
-  const hideModernControls = () => {
-    wrap.classList.remove('modern-controls-visible');
-
-    // 영상 밖으로 나가면 열린 보조 UI도 함께 즉시 닫는다.
+  const closeModernAuxUi = () => {
     settingsPanel?.classList.remove('is-open');
     settingsPanel?.setAttribute('aria-hidden', 'true');
     settingsButton?.classList.remove('is-active');
     volumeWrap?.classList.remove('is-open');
   };
 
+  const hideModernControls = (force = false) => {
+    clearModernControlsHideTimer();
+
+    // 드래그 중이거나 설정/볼륨 조작 중에는 자동 숨김을 막는다.
+    if (!force) {
+      const interactingWithAuxUi = !!settingsPanel?.classList.contains('is-open') || !!volumeWrap?.classList.contains('is-open');
+      if (modernPlayerSeeking || modernSeekPointerActive || interactingWithAuxUi) return;
+    }
+
+    wrap.classList.remove('modern-controls-visible');
+    closeModernAuxUi();
+  };
+
+  const scheduleModernControlsHide = (delay = MODERN_CONTROLS_IDLE_MS) => {
+    clearModernControlsHideTimer();
+    modernControlsHideTimer = setTimeout(() => hideModernControls(false), delay);
+  };
+
+  const showModernControls = () => {
+    wrap.classList.add('modern-controls-visible');
+    scheduleModernControlsHide();
+  };
+
   wrap.classList.remove('modern-controls-visible');
   wrap.addEventListener('pointerenter', showModernControls, { passive: true });
   wrap.addEventListener('pointermove', showModernControls, { passive: true });
-  wrap.addEventListener('pointerleave', hideModernControls, { passive: true });
-  wrap.addEventListener('mouseleave', hideModernControls, { passive: true });
+  wrap.addEventListener('pointerleave', () => hideModernControls(true), { passive: true });
+  wrap.addEventListener('mouseleave', () => hideModernControls(true), { passive: true });
+
+  // 플레이어 영역에서 손을 떼고 가만히 두면 유튜브처럼 자동으로 숨긴다.
+  wrap.addEventListener('pointerup', () => scheduleModernControlsHide(700), { passive: true });
+  wrap.addEventListener('mouseup', () => scheduleModernControlsHide(700), { passive: true });
+  wrap.addEventListener('touchend', () => scheduleModernControlsHide(900), { passive: true });
 
   // iframe에서 바로 사이트 바깥 영역으로 나갈 때 parent의 leave 이벤트가
   // 누락되는 브라우저까지 대비해서 문서의 실제 좌표로 한 번 더 확인한다.
@@ -1481,20 +1609,24 @@ function ensureModernYouTubeControls() {
       event.clientY >= rect.top &&
       event.clientY <= rect.bottom;
 
-    if (!inside) hideModernControls();
+    if (!inside) {
+      hideModernControls(true);
+    }
   }, { passive: true });
 
-  window.addEventListener('blur', hideModernControls);
+  window.addEventListener('blur', () => hideModernControls(true));
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) hideModernControls();
+    if (document.hidden) hideModernControls(true);
   });
 
   settingsButton?.addEventListener('click', (e) => {
     e.stopPropagation();
+    showModernControls();
     const open = !settingsPanel?.classList.contains('is-open');
     settingsPanel?.classList.toggle('is-open', open);
     settingsPanel?.setAttribute('aria-hidden', open ? 'false' : 'true');
     settingsButton.classList.toggle('is-active', open);
+    if (!open) scheduleModernControlsHide(700);
     updateModernPlayerControls();
   });
 
@@ -1512,10 +1644,8 @@ function ensureModernYouTubeControls() {
 
   wrap.addEventListener('click', (e) => {
     if (e.target.closest?.('.yt-modern-settings-panel, .yt-modern-settings, .yt-modern-volume-wrap')) return;
-    settingsPanel?.classList.remove('is-open');
-    settingsPanel?.setAttribute('aria-hidden', 'true');
-    settingsButton?.classList.remove('is-active');
-    volumeWrap?.classList.remove('is-open');
+    closeModernAuxUi();
+    scheduleModernControlsHide(700);
   });
 
   document.addEventListener('fullscreenchange', () => {
