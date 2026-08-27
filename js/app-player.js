@@ -309,29 +309,70 @@ function keepFiveSecondSeekShortcuts() {
   const wrap = document.querySelector(".player-wrap");
   if (!wrap) return;
   let pointerInsideYoutube = false;
+  let nativeHoverReset = false;
 
-  wrap.addEventListener("mouseenter", () => {
-    pointerInsideYoutube = true;
-  });
+  const getIframe = () => {
+    try { return ytPlayer?.getIframe?.() || null; } catch { return null; }
+  };
 
-  wrap.addEventListener("mouseleave", () => {
+  // YouTube iframe 안의 기본 UI는 부모 페이지에서 CSS로 직접 숨길 수 없다.
+  // 대신 영상 밖으로 빠지는 순간 iframe의 hover/focus를 확실히 끊어
+  // 공유/재생바/상단 오버레이가 YouTube의 기본 숨김 동작으로 바로 정리되게 한다.
+  const resetNativeYoutubeHover = () => {
     pointerInsideYoutube = false;
-    // 커스텀 재생바도 플레이어 안에 포함된다. 영상 밖으로 마우스를 빼면
-    // 즉시 사이트 쪽으로 포커스를 되돌리고 컨트롤은 CSS에서 바로 숨긴다.
-    window.setTimeout(() => {
-      const iframe = ytPlayer?.getIframe?.();
-      const fullscreenEl = document.fullscreenElement || document.webkitFullscreenElement;
-      if (fullscreenEl === wrap || fullscreenEl === iframe) return;
-      try { iframe?.blur?.(); } catch {}
-      focusPlayerArea();
-    }, 0);
-  });
+    const iframe = getIframe();
+    if (!iframe) return;
+
+    const fullscreenEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fullscreenEl === wrap || fullscreenEl === iframe) return;
+
+    try { iframe.blur(); } catch {}
+    try {
+      iframe.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: wrap }));
+      iframe.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false, relatedTarget: wrap }));
+    } catch {}
+
+    // 포인터가 밖에 있는 동안 iframe이 계속 hover 상태로 남는 브라우저가 있어
+    // 잠깐 입력 대상을 부모로 넘긴다. 다시 영상 위로 들어오면 즉시 복구한다.
+    if (!nativeHoverReset) {
+      nativeHoverReset = true;
+      iframe.style.pointerEvents = "none";
+    }
+    focusPlayerArea();
+  };
+
+  const restoreNativeYoutubeHover = () => {
+    pointerInsideYoutube = true;
+    const iframe = getIframe();
+    if (iframe && nativeHoverReset) {
+      iframe.style.pointerEvents = "";
+      nativeHoverReset = false;
+    }
+  };
+
+  wrap.addEventListener("pointerenter", restoreNativeYoutubeHover, { passive: true });
+  wrap.addEventListener("mouseenter", restoreNativeYoutubeHover, { passive: true });
+  wrap.addEventListener("pointerleave", resetNativeYoutubeHover, { passive: true });
+  wrap.addEventListener("mouseleave", resetNativeYoutubeHover, { passive: true });
+
+  // iframe 경계에서는 parent의 leave 이벤트가 누락될 수 있으므로,
+  // 바깥 문서에서 포인터가 다시 잡히는 즉시 실제 좌표를 확인해 강제 정리한다.
+  document.addEventListener("pointermove", (event) => {
+    const rect = wrap.getBoundingClientRect();
+    const inside =
+      event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY <= rect.bottom;
+
+    if (!inside) resetNativeYoutubeHover();
+  }, { passive: true });
 
   window.addEventListener("blur", () => {
     window.setTimeout(() => {
-      const iframe = ytPlayer?.getIframe?.();
+      const iframe = getIframe();
       if (iframe && document.activeElement === iframe && !pointerInsideYoutube) {
-        focusPlayerArea();
+        resetNativeYoutubeHover();
       }
     }, 0);
   });
