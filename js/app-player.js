@@ -1347,6 +1347,7 @@ async function loadModernYouTubeHeatmap(videoId) {
 }
 
 function ensureModernYouTubeControls() {
+  return; // YouTube 기본 재생바만 사용
   const wrap = document.querySelector('.player-wrap');
   if (!wrap || wrap.querySelector('.yt-modern-controls')) return;
 
@@ -1669,13 +1670,13 @@ function createYouTubePlayerOnce() {
     playerVars: {
       autoplay: 1,
       rel: 0,
-      controls: 0,
-      fs: 0,
+      controls: 1,
+      fs: 1,
       playsinline: 1,
       hl: "ko",
       cc_lang_pref: YOUTUBE_CAPTION_LANGUAGE,
       cc_load_policy: 1,
-      disablekb: 1
+      disablekb: 0
     },
     events: {
       onReady: () => {
@@ -1683,9 +1684,9 @@ function createYouTubePlayerOnce() {
         playerReady = true;
         apiLoading = false;
         applyKoreanCaptions();
-        ensureModernYouTubeControls();
+        // 사이트에서 만든 커스텀 재생바는 사용하지 않고 YouTube 기본 컨트롤만 사용한다.
+        document.querySelectorAll('.yt-modern-controls').forEach((el) => el.remove());
         keepFiveSecondSeekShortcuts();
-        focusPlayerArea();
         flushPlayerReadyQueue();
       },
       onStateChange: onPlayerStateChange

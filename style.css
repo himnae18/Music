@@ -4602,3 +4602,13 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 .yt-modern-seek-preview-picture.is-fallback{
   background-color:#111;
 }
+
+
+/* 2026-08-28: 사이트 커스텀 재생바 완전 제거 — YouTube 기본 재생바만 표시 */
+.yt-modern-controls,
+.player-wrap .yt-modern-controls{
+  display:none !important;
+  opacity:0 !important;
+  visibility:hidden !important;
+  pointer-events:none !important;
+}
