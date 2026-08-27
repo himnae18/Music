@@ -309,70 +309,29 @@ function keepFiveSecondSeekShortcuts() {
   const wrap = document.querySelector(".player-wrap");
   if (!wrap) return;
   let pointerInsideYoutube = false;
-  let nativeHoverReset = false;
 
-  const getIframe = () => {
-    try { return ytPlayer?.getIframe?.() || null; } catch { return null; }
-  };
-
-  // YouTube iframe 안의 기본 UI는 부모 페이지에서 CSS로 직접 숨길 수 없다.
-  // 대신 영상 밖으로 빠지는 순간 iframe의 hover/focus를 확실히 끊어
-  // 공유/재생바/상단 오버레이가 YouTube의 기본 숨김 동작으로 바로 정리되게 한다.
-  const resetNativeYoutubeHover = () => {
-    pointerInsideYoutube = false;
-    const iframe = getIframe();
-    if (!iframe) return;
-
-    const fullscreenEl = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fullscreenEl === wrap || fullscreenEl === iframe) return;
-
-    try { iframe.blur(); } catch {}
-    try {
-      iframe.dispatchEvent(new MouseEvent("mouseout", { bubbles: true, relatedTarget: wrap }));
-      iframe.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false, relatedTarget: wrap }));
-    } catch {}
-
-    // 포인터가 밖에 있는 동안 iframe이 계속 hover 상태로 남는 브라우저가 있어
-    // 잠깐 입력 대상을 부모로 넘긴다. 다시 영상 위로 들어오면 즉시 복구한다.
-    if (!nativeHoverReset) {
-      nativeHoverReset = true;
-      iframe.style.pointerEvents = "none";
-    }
-    focusPlayerArea();
-  };
-
-  const restoreNativeYoutubeHover = () => {
+  wrap.addEventListener("mouseenter", () => {
     pointerInsideYoutube = true;
-    const iframe = getIframe();
-    if (iframe && nativeHoverReset) {
-      iframe.style.pointerEvents = "";
-      nativeHoverReset = false;
-    }
-  };
+  });
 
-  wrap.addEventListener("pointerenter", restoreNativeYoutubeHover, { passive: true });
-  wrap.addEventListener("mouseenter", restoreNativeYoutubeHover, { passive: true });
-  wrap.addEventListener("pointerleave", resetNativeYoutubeHover, { passive: true });
-  wrap.addEventListener("mouseleave", resetNativeYoutubeHover, { passive: true });
-
-  // iframe 경계에서는 parent의 leave 이벤트가 누락될 수 있으므로,
-  // 바깥 문서에서 포인터가 다시 잡히는 즉시 실제 좌표를 확인해 강제 정리한다.
-  document.addEventListener("pointermove", (event) => {
-    const rect = wrap.getBoundingClientRect();
-    const inside =
-      event.clientX >= rect.left &&
-      event.clientX <= rect.right &&
-      event.clientY >= rect.top &&
-      event.clientY <= rect.bottom;
-
-    if (!inside) resetNativeYoutubeHover();
-  }, { passive: true });
+  wrap.addEventListener("mouseleave", () => {
+    pointerInsideYoutube = false;
+    // 커스텀 재생바도 플레이어 안에 포함된다. 영상 밖으로 마우스를 빼면
+    // 즉시 사이트 쪽으로 포커스를 되돌리고 컨트롤은 CSS에서 바로 숨긴다.
+    window.setTimeout(() => {
+      const iframe = ytPlayer?.getIframe?.();
+      const fullscreenEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fullscreenEl === wrap || fullscreenEl === iframe) return;
+      try { iframe?.blur?.(); } catch {}
+      focusPlayerArea();
+    }, 0);
+  });
 
   window.addEventListener("blur", () => {
     window.setTimeout(() => {
-      const iframe = getIframe();
+      const iframe = ytPlayer?.getIframe?.();
       if (iframe && document.activeElement === iframe && !pointerInsideYoutube) {
-        resetNativeYoutubeHover();
+        focusPlayerArea();
       }
     }, 0);
   });
@@ -899,6 +858,8 @@ function updateModernPlayerControls() {
     const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
     seek.value = String(Math.max(0, Math.min(1000, Math.round(pct * 10))));
     setModernRangeFill(seek, pct);
+    const progressWrap = controls.querySelector('.yt-modern-progress-wrap');
+    progressWrap?.style.setProperty('--seek-pct', `${Math.max(0, Math.min(100, pct))}%`);
   }
 
   const time = controls.querySelector('.yt-modern-time');
@@ -1388,7 +1349,6 @@ async function loadModernYouTubeHeatmap(videoId) {
 }
 
 function ensureModernYouTubeControls() {
-  return; // YouTube 기본 재생바만 사용
   const wrap = document.querySelector('.player-wrap');
   if (!wrap || wrap.querySelector('.yt-modern-controls')) return;
 
@@ -1397,6 +1357,7 @@ function ensureModernYouTubeControls() {
   controls.innerHTML = `
     <div class="yt-modern-bottom">
       <div class="yt-modern-progress-wrap">
+        <div class="yt-modern-seek-track" aria-hidden="true"><i></i></div>
         <div class="yt-modern-heatmap" aria-hidden="true">
           <svg class="yt-modern-heatmap-svg" viewBox="0 0 1000 100" preserveAspectRatio="none">
             <path class="yt-modern-heatmap-fill" d=""></path>
@@ -1471,6 +1432,20 @@ function ensureModernYouTubeControls() {
     </div>`;
   wrap.appendChild(controls);
 
+  // YouTube iframe 자체가 마우스를 받으면 임베드 전용 제목/공유/하단 UI가
+  // iframe 안에서 자체적으로 떠서 부모 페이지가 즉시 숨길 수 없다.
+  // 그래서 마우스 입력은 사이트 레이어가 받고, 영상 조작은 IFrame API로 처리한다.
+  // 이 방식이면 포인터가 플레이어를 벗어나는 순간 사이트 컨트롤을 바로 숨길 수 있다.
+  let interactionLayer = wrap.querySelector('.player-interaction-layer');
+  if (!interactionLayer) {
+    interactionLayer = document.createElement('div');
+    interactionLayer.className = 'player-interaction-layer';
+    interactionLayer.setAttribute('aria-label', '영상 재생/일시정지');
+    interactionLayer.setAttribute('role', 'button');
+    interactionLayer.setAttribute('tabindex', '0');
+    wrap.insertBefore(interactionLayer, controls);
+  }
+
   const seek = controls.querySelector('.yt-modern-seek');
   const progressWrap = controls.querySelector('.yt-modern-progress-wrap');
   let modernSeekPointerActive = false;
@@ -1487,6 +1462,7 @@ function ensureModernYouTubeControls() {
     const pct = getModernSeekPercentFromPointer(event);
     seek.value = String(Math.max(0, Math.min(1000, Math.round(pct * 10))));
     setModernRangeFill(seek, pct);
+    progressWrap.style.setProperty('--seek-pct', `${Math.max(0, Math.min(100, pct))}%`);
     updateModernSeekPreview(event);
 
     let duration = 0;
@@ -1537,6 +1513,7 @@ function ensureModernYouTubeControls() {
   seek?.addEventListener('input', () => {
     const pct = Number(seek.value) / 10;
     setModernRangeFill(seek, pct);
+    progressWrap?.style.setProperty('--seek-pct', `${Math.max(0, Math.min(100, pct))}%`);
   });
   seek?.addEventListener('change', () => {
     const pct = Number(seek.value || 0) / 10;
@@ -1631,6 +1608,21 @@ function ensureModernYouTubeControls() {
   };
 
   wrap.classList.remove('modern-controls-visible');
+
+  // iframe 대신 이 레이어에서 클릭을 받아 재생/일시정지를 수행한다.
+  interactionLayer?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    togglePlayerPlayPause();
+    updateModernPlayerControls();
+  });
+  interactionLayer?.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    togglePlayerPlayPause();
+    updateModernPlayerControls();
+  });
+
   wrap.addEventListener('pointerenter', showModernControls, { passive: true });
   wrap.addEventListener('pointermove', showModernControls, { passive: true });
   wrap.addEventListener('pointerleave', () => hideModernControls(true), { passive: true });
@@ -1726,8 +1718,9 @@ function createYouTubePlayerOnce() {
         playerReady = true;
         apiLoading = false;
         applyKoreanCaptions();
-        // 사이트 커스텀 재생바도 남지 않도록 제거한다.
-        document.querySelectorAll('.yt-modern-controls').forEach((el) => el.remove());
+        // 임베드 기본 UI 대신 사이트가 직접 그리는 컨트롤을 사용한다.
+        // 마우스가 영상 밖으로 나가면 즉시 사라지도록 부모 페이지에서 제어한다.
+        ensureModernYouTubeControls();
         keepFiveSecondSeekShortcuts();
         flushPlayerReadyQueue();
       },

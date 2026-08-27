@@ -4003,6 +4003,21 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   z-index:1;
 }
 
+/*
+  iframe 안쪽 YouTube UI는 cross-origin이라 부모 페이지가 직접 숨길 수 없다.
+  실제 포인터 입력을 이 투명 레이어가 받게 해서 YouTube 임베드의 제목/공유 UI가
+  hover로 다시 뜨지 않게 하고, 재생/탐색은 IFrame API + 아래 커스텀 컨트롤로 처리한다.
+*/
+.player-interaction-layer{
+  position:absolute;
+  inset:0;
+  z-index:10;
+  background:transparent;
+  cursor:pointer;
+  outline:none;
+  touch-action:manipulation;
+}
+
 .yt-modern-controls{
   position:absolute;
   inset:0;
@@ -4033,6 +4048,7 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 
 .yt-modern-progress-wrap{
   --most-replayed-pct:50%;
+  --seek-pct:0%;
   position:relative;
   height:58px;
   display:flex;
@@ -4041,6 +4057,44 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   pointer-events:auto;
   cursor:pointer;
   touch-action:none;
+}
+
+/* YouTube와 비슷한 얇은 진행바. iframe 기본 UI를 막아도 재생 위치는 항상 보인다. */
+.yt-modern-seek-track{
+  position:absolute;
+  left:2px;
+  right:2px;
+  bottom:7px;
+  z-index:5;
+  height:4px;
+  border-radius:999px;
+  background:rgba(255,255,255,.48);
+  pointer-events:none;
+}
+.yt-modern-seek-track::before{
+  content:"";
+  position:absolute;
+  inset:0 auto 0 0;
+  width:var(--seek-pct);
+  border-radius:inherit;
+  background:#ff0033;
+}
+.yt-modern-seek-track i{
+  position:absolute;
+  left:var(--seek-pct);
+  top:50%;
+  width:12px;
+  height:12px;
+  border-radius:50%;
+  background:#ff0033;
+  transform:translate(-50%,-50%) scale(.72);
+  opacity:0;
+  transition:opacity .08s ease, transform .08s ease;
+}
+.yt-modern-progress-wrap:hover .yt-modern-seek-track{ height:5px; }
+.yt-modern-progress-wrap:hover .yt-modern-seek-track i{
+  opacity:1;
+  transform:translate(-50%,-50%) scale(1);
 }
 
 /* YouTube의 실제 Most Replayed 데이터로 그리는 heatmap */
@@ -4604,20 +4658,4 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 }
 
 
-/* 2026-08-28: 사이트 커스텀 재생바 완전 제거 — YouTube 기본 재생바만 표시 */
-.yt-modern-controls,
-.player-wrap .yt-modern-controls{
-  display:none !important;
-  opacity:0 !important;
-  visibility:hidden !important;
-  pointer-events:none !important;
-}
-
-/* 재생바 완전 제거: 레거시/커스텀 재생바가 다시 생성되어도 표시하지 않음 */
-.yt-modern-progress-wrap,
-.yt-modern-seek,
-.yt-modern-heatmap,
-.yt-modern-seek-preview,
-.yt-modern-most-replayed-label{
-  display:none !important;
-}
+/* 2026-08-28: 즉시 숨김 버전 — 사이트 컨트롤 활성화 */
