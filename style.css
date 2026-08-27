@@ -4206,8 +4206,17 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 }
 
 .yt-modern-seek{
-  position:relative;
-  z-index:5;
+  /* 예전에 만든 빨간/회색 진행바는 시각적으로 제거.
+     입력 자체는 heatmap 전체를 덮는 투명 seek 영역으로 남겨
+     클릭/드래그로 재생 위치를 옮길 수 있게 유지한다. */
+  position:absolute;
+  inset:0;
+  z-index:6;
+  width:100%;
+  height:100%;
+  margin:0;
+  opacity:0;
+  cursor:pointer;
 }
 
 .yt-modern-range{
