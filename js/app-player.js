@@ -287,16 +287,41 @@ function focusPlayerArea() {
   try { playerArea.focus({ preventScroll: true }); } catch {}
 }
 
-// 유튜브 iframe이 키보드 포커스를 가져가면 J/L이 유튜브 기본값(10초)으로 동작한다.
-// 플레이어를 클릭한 뒤에도 사이트 단축키(5초)가 계속 적용되도록 포커스를 되돌린다.
+// 유튜브 iframe이 키보드 포커스를 가져가면 사이트 단축키 이벤트를 받을 수 없다.
+// 다만 클릭 직후 강제로 포커스를 뺏으면 유튜브의 볼륨 슬라이더/설정창이 즉시 닫힌다.
+// 그래서 마우스가 플레이어 안에 있는 동안에는 유튜브의 포커스를 유지하고,
+// 플레이어 밖으로 나왔을 때만 사이트 쪽으로 포커스를 되돌린다.
 function keepFiveSecondSeekShortcuts() {
   if (window.__fiveSecondSeekFocusBound) return;
   window.__fiveSecondSeekFocusBound = true;
 
+  const wrap = document.querySelector(".player-wrap");
+  if (!wrap) return;
+  let pointerInsideYoutube = false;
+
+  wrap.addEventListener("mouseenter", () => {
+    pointerInsideYoutube = true;
+  });
+
+  wrap.addEventListener("mouseleave", () => {
+    pointerInsideYoutube = false;
+    // 커스텀 재생바도 플레이어 안에 포함된다. 영상 밖으로 마우스를 빼면
+    // 즉시 사이트 쪽으로 포커스를 되돌리고 컨트롤은 CSS에서 바로 숨긴다.
+    window.setTimeout(() => {
+      const iframe = ytPlayer?.getIframe?.();
+      const fullscreenEl = document.fullscreenElement || document.webkitFullscreenElement;
+      if (fullscreenEl === wrap || fullscreenEl === iframe) return;
+      try { iframe?.blur?.(); } catch {}
+      focusPlayerArea();
+    }, 0);
+  });
+
   window.addEventListener("blur", () => {
     window.setTimeout(() => {
       const iframe = ytPlayer?.getIframe?.();
-      if (iframe && document.activeElement === iframe) focusPlayerArea();
+      if (iframe && document.activeElement === iframe && !pointerInsideYoutube) {
+        focusPlayerArea();
+      }
     }, 0);
   });
 }
@@ -344,8 +369,15 @@ function seekPlayerRelative(seconds) {
   }
 }
 
+let modernCaptionsEnabled = true;
+
 function applyKoreanCaptions() {
   if (!ytPlayer) return;
+  if (!modernCaptionsEnabled) {
+    try { ytPlayer.unloadModule?.("captions"); } catch {}
+    try { ytPlayer.unloadModule?.("cc"); } catch {}
+    return;
+  }
 
   try { ytPlayer.loadModule?.("captions"); } catch {}
   try { ytPlayer.loadModule?.("cc"); } catch {}
@@ -755,6 +787,346 @@ function flushPlayerReadyQueue() {
   });
 }
 
+
+function modernPlayerIcon(name) {
+  const icons = {
+    play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.2v13.6L19 12 8 5.2Z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7V5Zm6 0h4v14h-4V5Z"/></svg>',
+    prev: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2.5v14H6V5Zm3.7 7L19 5.8v12.4L9.7 12Z"/></svg>',
+    next: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15.5 5H18v14h-2.5V5ZM5 5.8 14.3 12 5 18.2V5.8Z"/></svg>',
+    volume: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm11.5-.7v2c1 .5 1.7 1.5 1.7 2.7s-.7 2.2-1.7 2.7v2c2.1-.6 3.7-2.5 3.7-4.7s-1.6-4.1-3.7-4.7Z"/></svg>',
+    muted: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Zm11.1 1.3 1.4 1.4 1.4-1.4 1.1 1.1-1.4 1.4 1.4 1.4-1.1 1.1-1.4-1.4-1.4 1.4-1.1-1.1 1.4-1.4-1.4-1.4 1.1-1.1Z"/></svg>',
+    cc: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm4.7 5.2c-.3-.4-.8-.7-1.4-.7-1.1 0-1.8.9-1.8 2.5s.7 2.5 1.8 2.5c.7 0 1.2-.3 1.5-.8l1.2.8c-.6.9-1.5 1.4-2.8 1.4-2.1 0-3.5-1.5-3.5-3.9s1.4-3.9 3.5-3.9c1.2 0 2.2.5 2.8 1.4l-1.3.7Zm7 0c-.3-.4-.8-.7-1.4-.7-1.1 0-1.8.9-1.8 2.5s.7 2.5 1.8 2.5c.7 0 1.2-.3 1.5-.8l1.2.8c-.6.9-1.5 1.4-2.8 1.4-2.1 0-3.5-1.5-3.5-3.9s1.4-3.9 3.5-3.9c1.2 0 2.2.5 2.8 1.4l-1.3.7Z"/></svg>',
+    gear: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.8 7.8 0 0 0 .1-1 7.8 7.8 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a8 8 0 0 0-1.8-1L15 3.5h-4L10.7 6a8 8 0 0 0-1.8 1l-2.4-1-2 3.4 2 1.5a7.8 7.8 0 0 0-.1 1 7.8 7.8 0 0 0 .1 1l-2 1.5 2 3.4 2.4-1a8 8 0 0 0 1.8 1l.3 2.5h4l.3-2.5a8 8 0 0 0 1.8-1l2.4 1 2-3.4-2.1-1.4ZM13 15.3A3.3 3.3 0 1 1 13 8.7a3.3 3.3 0 0 1 0 6.6Z"/></svg>',
+    mini: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18v14H3V5Zm2 2v10h14V7H5Zm7 5h6v4h-6v-4Z"/></svg>',
+    fullscreen: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5v2H6v3H4Zm11-5h5v5h-2V6h-3V4ZM4 15h2v3h3v2H4v-5Zm14 0h2v5h-5v-2h3v-3Z"/></svg>',
+    moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.2A8 8 0 0 1 8.8 3.8 8.5 8.5 0 1 0 20.2 15.2Z"/></svg>',
+    spark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 1.5 5.2L19 9l-5.5 1.8L12 16l-1.5-5.2L5 9l5.5-1.8L12 2Zm7 12 .8 2.7L22 17.5l-2.2.8L19 21l-.8-2.7-2.2-.8 2.2-.8L19 14Z"/></svg>'
+  };
+  return icons[name] || '';
+}
+
+function formatModernPlayerTime(value) {
+  const sec = Math.max(0, Math.floor(Number(value) || 0));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+}
+
+let modernPlayerTimer = null;
+let modernPlayerSeeking = false;
+let modernSleepMinutes = 0;
+let modernSleepTimer = null;
+let modernAmbientEnabled = false;
+
+function setModernRangeFill(input, percent) {
+  if (!input) return;
+  const pct = Math.max(0, Math.min(100, Number(percent) || 0));
+  input.style.setProperty('--range-pct', `${pct}%`);
+}
+
+function updateModernPlayerControls() {
+  const wrap = document.querySelector('.player-wrap');
+  const controls = wrap?.querySelector('.yt-modern-controls');
+  if (!wrap || !controls || !ytPlayer) return;
+
+  let currentTime = 0;
+  let duration = 0;
+  let state = -1;
+  let volume = 100;
+  let muted = false;
+  try { currentTime = Number(ytPlayer.getCurrentTime?.()) || 0; } catch {}
+  try { duration = Number(ytPlayer.getDuration?.()) || 0; } catch {}
+  try { state = Number(ytPlayer.getPlayerState?.()); } catch {}
+  try { volume = Number(ytPlayer.getVolume?.()) || 0; } catch {}
+  try { muted = !!ytPlayer.isMuted?.(); } catch {}
+
+  const seek = controls.querySelector('.yt-modern-seek');
+  if (seek && !modernPlayerSeeking) {
+    const pct = duration > 0 ? (currentTime / duration) * 100 : 0;
+    seek.value = String(Math.max(0, Math.min(1000, Math.round(pct * 10))));
+    setModernRangeFill(seek, pct);
+  }
+
+  const time = controls.querySelector('.yt-modern-time');
+  if (time) time.textContent = `${formatModernPlayerTime(currentTime)} / ${formatModernPlayerTime(duration)}`;
+
+  const playButton = controls.querySelector('.yt-modern-play');
+  const playing = state === window.YT?.PlayerState?.PLAYING || state === window.YT?.PlayerState?.BUFFERING;
+  if (playButton) {
+    playButton.innerHTML = modernPlayerIcon(playing ? 'pause' : 'play');
+    playButton.setAttribute('aria-label', playing ? '일시정지' : '재생');
+    playButton.title = playing ? '일시정지' : '재생';
+  }
+
+  const volumeButton = controls.querySelector('.yt-modern-volume-btn');
+  if (volumeButton) volumeButton.innerHTML = modernPlayerIcon(muted || volume === 0 ? 'muted' : 'volume');
+  const volumeInput = controls.querySelector('.yt-modern-volume-range');
+  if (volumeInput && document.activeElement !== volumeInput) {
+    volumeInput.value = String(volume);
+    setModernRangeFill(volumeInput, volume);
+  }
+
+  controls.querySelector('.yt-modern-cc')?.classList.toggle('is-active', modernCaptionsEnabled);
+  const captionValue = controls.querySelector('[data-modern-setting="captions"] .yt-modern-setting-value');
+  if (captionValue) captionValue.textContent = modernCaptionsEnabled ? '한국어' : '사용 안함';
+
+  const speedValue = controls.querySelector('[data-modern-setting="speed"] .yt-modern-setting-value');
+  if (speedValue) speedValue.textContent = getCurrentPlaybackRate() === 1 ? '보통' : `${getCurrentPlaybackRate()}x`;
+
+  const qualityValue = controls.querySelector('[data-modern-setting="quality"] .yt-modern-setting-value');
+  if (qualityValue) {
+    let quality = '';
+    try { quality = String(ytPlayer.getPlaybackQuality?.() || ''); } catch {}
+    const labels = { highres:'최고 화질', hd2160:'2160p', hd1440:'1440p', hd1080:'1080p', hd720:'720p', large:'480p', medium:'360p', small:'240p', tiny:'144p', auto:'자동' };
+    qualityValue.textContent = labels[quality] || '자동';
+  }
+
+  const sleepValue = controls.querySelector('[data-modern-setting="sleep"] .yt-modern-setting-value');
+  if (sleepValue) sleepValue.textContent = modernSleepMinutes ? `${modernSleepMinutes}분` : '사용 안함';
+  controls.querySelector('.yt-modern-ambient-switch')?.classList.toggle('is-on', modernAmbientEnabled);
+}
+
+function toggleModernCaptions() {
+  modernCaptionsEnabled = !modernCaptionsEnabled;
+  if (modernCaptionsEnabled) {
+    applyKoreanCaptions();
+  } else {
+    try { ytPlayer?.unloadModule?.('captions'); } catch {}
+    try { ytPlayer?.unloadModule?.('cc'); } catch {}
+  }
+  updateModernPlayerControls();
+}
+
+function cycleModernSleepTimer() {
+  const options = [0, 15, 30, 60];
+  const at = options.indexOf(modernSleepMinutes);
+  modernSleepMinutes = options[(at + 1) % options.length];
+  clearTimeout(modernSleepTimer);
+  modernSleepTimer = null;
+  if (modernSleepMinutes > 0) {
+    modernSleepTimer = setTimeout(() => {
+      try { ytPlayer?.pauseVideo?.(); } catch {}
+      modernSleepMinutes = 0;
+      updateModernPlayerControls();
+    }, modernSleepMinutes * 60 * 1000);
+  }
+  updateModernPlayerControls();
+}
+
+function cycleModernPlaybackSpeed() {
+  const rates = getAvailablePlaybackRates();
+  if (!rates.length) return;
+  const currentRate = getCurrentPlaybackRate();
+  let idx = rates.findIndex(rate => Math.abs(rate - currentRate) < 0.001);
+  if (idx < 0) idx = rates.findIndex(rate => rate > currentRate) - 1;
+  const next = rates[(idx + 1 + rates.length) % rates.length];
+  setPlayerPlaybackRate(next, 1, { silent: true });
+  updateModernPlayerControls();
+}
+
+function cycleModernQuality() {
+  if (!ytPlayer?.setPlaybackQuality) return;
+  let levels = [];
+  try { levels = ytPlayer.getAvailableQualityLevels?.() || []; } catch {}
+  if (!Array.isArray(levels) || !levels.length) return;
+  let currentQuality = '';
+  try { currentQuality = ytPlayer.getPlaybackQuality?.() || ''; } catch {}
+  let idx = levels.indexOf(currentQuality);
+  const next = levels[(idx + 1 + levels.length) % levels.length];
+  try { ytPlayer.setPlaybackQuality(next); } catch {}
+  setTimeout(updateModernPlayerControls, 300);
+}
+
+function toggleModernMiniPlayer() {
+  const wrap = document.querySelector('.player-wrap');
+  if (!wrap) return;
+  const entering = !wrap.classList.contains('is-modern-mini');
+  if (entering) {
+    const rect = wrap.getBoundingClientRect();
+    wrap.dataset.modernOriginWidth = wrap.style.width || '';
+    wrap.dataset.modernOriginTransform = wrap.style.transform || '';
+    wrap.dataset.modernOriginMarginLeft = wrap.style.marginLeft || '';
+    wrap.style.setProperty('--modern-mini-ratio', String(rect.width / Math.max(1, rect.height)));
+  }
+  wrap.classList.toggle('is-modern-mini', entering);
+  const btn = wrap.querySelector('.yt-modern-mini');
+  btn?.classList.toggle('is-active', entering);
+}
+
+function toggleModernFullscreen() {
+  const wrap = document.querySelector('.player-wrap');
+  if (!wrap) return;
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    (document.exitFullscreen?.() || document.webkitExitFullscreen?.());
+    return;
+  }
+  try {
+    const promise = wrap.requestFullscreen?.() || wrap.webkitRequestFullscreen?.();
+    promise?.catch?.(() => {});
+  } catch {}
+}
+
+function ensureModernYouTubeControls() {
+  const wrap = document.querySelector('.player-wrap');
+  if (!wrap || wrap.querySelector('.yt-modern-controls')) return;
+
+  const controls = document.createElement('div');
+  controls.className = 'yt-modern-controls';
+  controls.innerHTML = `
+    <div class="yt-modern-bottom">
+      <div class="yt-modern-progress-wrap">
+        <input class="yt-modern-seek yt-modern-range" type="range" min="0" max="1000" value="0" step="1" aria-label="재생 위치" />
+      </div>
+      <div class="yt-modern-control-row">
+        <div class="yt-modern-left-controls">
+          <button class="yt-modern-btn yt-modern-round yt-modern-play" type="button" aria-label="재생" title="재생">${modernPlayerIcon('play')}</button>
+          <div class="yt-modern-pill yt-modern-skip-pill">
+            <button class="yt-modern-btn yt-modern-prev" type="button" aria-label="이전 곡" title="이전 곡">${modernPlayerIcon('prev')}</button>
+            <button class="yt-modern-btn yt-modern-next" type="button" aria-label="다음 곡" title="다음 곡">${modernPlayerIcon('next')}</button>
+          </div>
+          <div class="yt-modern-volume-wrap">
+            <button class="yt-modern-btn yt-modern-round yt-modern-volume-btn" type="button" aria-label="볼륨" title="볼륨">${modernPlayerIcon('volume')}</button>
+            <div class="yt-modern-volume-popover">
+              <input class="yt-modern-volume-range yt-modern-range" type="range" min="0" max="100" step="1" value="100" aria-label="볼륨 조절" />
+            </div>
+          </div>
+          <div class="yt-modern-time-pill"><span class="yt-modern-time">0:00 / 0:00</span></div>
+        </div>
+        <div class="yt-modern-right-wrap">
+          <div class="yt-modern-settings-panel" aria-hidden="true">
+            <button class="yt-modern-setting-row" type="button" data-modern-setting="ambient">
+              <span class="yt-modern-setting-icon">${modernPlayerIcon('spark')}</span>
+              <span class="yt-modern-setting-label">특수효과</span>
+              <span class="yt-modern-ambient-switch"><i></i></span>
+            </button>
+            <button class="yt-modern-setting-row" type="button" data-modern-setting="captions">
+              <span class="yt-modern-setting-icon">${modernPlayerIcon('cc')}</span>
+              <span class="yt-modern-setting-label">자막</span>
+              <span class="yt-modern-setting-value">한국어</span><span class="yt-modern-chevron">›</span>
+            </button>
+            <button class="yt-modern-setting-row" type="button" data-modern-setting="sleep">
+              <span class="yt-modern-setting-icon">${modernPlayerIcon('moon')}</span>
+              <span class="yt-modern-setting-label">취침 타이머</span>
+              <span class="yt-modern-setting-value">사용 안함</span><span class="yt-modern-chevron">›</span>
+            </button>
+            <button class="yt-modern-setting-row" type="button" data-modern-setting="speed">
+              <span class="yt-modern-setting-icon">⟳</span>
+              <span class="yt-modern-setting-label">재생 속도</span>
+              <span class="yt-modern-setting-value">보통</span><span class="yt-modern-chevron">›</span>
+            </button>
+            <button class="yt-modern-setting-row" type="button" data-modern-setting="quality">
+              <span class="yt-modern-setting-icon">☷</span>
+              <span class="yt-modern-setting-label">화질</span>
+              <span class="yt-modern-setting-value">자동</span><span class="yt-modern-chevron">›</span>
+            </button>
+          </div>
+          <div class="yt-modern-pill yt-modern-right-controls">
+            <button class="yt-modern-btn yt-modern-cc is-active" type="button" aria-label="자막" title="자막">${modernPlayerIcon('cc')}</button>
+            <button class="yt-modern-btn yt-modern-settings" type="button" aria-label="설정" title="설정">${modernPlayerIcon('gear')}</button>
+            <button class="yt-modern-btn yt-modern-mini" type="button" aria-label="미니 플레이어" title="미니 플레이어">${modernPlayerIcon('mini')}</button>
+            <button class="yt-modern-btn yt-modern-fullscreen" type="button" aria-label="전체 화면" title="전체 화면">${modernPlayerIcon('fullscreen')}</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  wrap.appendChild(controls);
+
+  const seek = controls.querySelector('.yt-modern-seek');
+  seek?.addEventListener('pointerdown', () => { modernPlayerSeeking = true; });
+  seek?.addEventListener('input', () => {
+    const pct = Number(seek.value) / 10;
+    setModernRangeFill(seek, pct);
+    let duration = 0;
+    try { duration = Number(ytPlayer?.getDuration?.()) || 0; } catch {}
+    const preview = controls.querySelector('.yt-modern-time');
+    if (preview && duration > 0) preview.textContent = `${formatModernPlayerTime(duration * pct / 100)} / ${formatModernPlayerTime(duration)}`;
+  });
+  const commitSeek = () => {
+    const pct = Number(seek?.value || 0) / 10;
+    let duration = 0;
+    try { duration = Number(ytPlayer?.getDuration?.()) || 0; } catch {}
+    if (duration > 0) {
+      try { ytPlayer?.seekTo?.(duration * pct / 100, true); } catch {}
+    }
+    modernPlayerSeeking = false;
+    updateModernPlayerControls();
+  };
+  seek?.addEventListener('change', commitSeek);
+  seek?.addEventListener('pointerup', commitSeek);
+
+  controls.querySelector('.yt-modern-play')?.addEventListener('click', (e) => { e.stopPropagation(); togglePlayerPlayPause(); updateModernPlayerControls(); });
+  controls.querySelector('.yt-modern-prev')?.addEventListener('click', (e) => { e.stopPropagation(); previousSong(); });
+  controls.querySelector('.yt-modern-next')?.addEventListener('click', (e) => { e.stopPropagation(); nextSong(); });
+
+  const volumeWrap = controls.querySelector('.yt-modern-volume-wrap');
+  const volumeButton = controls.querySelector('.yt-modern-volume-btn');
+  const volumeInput = controls.querySelector('.yt-modern-volume-range');
+  volumeButton?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    volumeWrap?.classList.toggle('is-open');
+    if (!volumeWrap?.classList.contains('is-open')) {
+      try {
+        if (ytPlayer?.isMuted?.()) ytPlayer.unMute?.(); else ytPlayer?.mute?.();
+      } catch {}
+    }
+    updateModernPlayerControls();
+  });
+  volumeInput?.addEventListener('input', (e) => {
+    e.stopPropagation();
+    const value = Number(volumeInput.value || 0);
+    try {
+      ytPlayer?.unMute?.();
+      ytPlayer?.setVolume?.(value);
+    } catch {}
+    setModernRangeFill(volumeInput, value);
+    updateModernPlayerControls();
+  });
+
+  controls.querySelector('.yt-modern-cc')?.addEventListener('click', (e) => { e.stopPropagation(); toggleModernCaptions(); });
+  const settingsPanel = controls.querySelector('.yt-modern-settings-panel');
+  const settingsButton = controls.querySelector('.yt-modern-settings');
+  settingsButton?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = !settingsPanel?.classList.contains('is-open');
+    settingsPanel?.classList.toggle('is-open', open);
+    settingsPanel?.setAttribute('aria-hidden', open ? 'false' : 'true');
+    settingsButton.classList.toggle('is-active', open);
+    updateModernPlayerControls();
+  });
+
+  controls.querySelector('[data-modern-setting="ambient"]')?.addEventListener('click', () => {
+    modernAmbientEnabled = !modernAmbientEnabled;
+    wrap.classList.toggle('modern-ambient-on', modernAmbientEnabled);
+    updateModernPlayerControls();
+  });
+  controls.querySelector('[data-modern-setting="captions"]')?.addEventListener('click', toggleModernCaptions);
+  controls.querySelector('[data-modern-setting="sleep"]')?.addEventListener('click', cycleModernSleepTimer);
+  controls.querySelector('[data-modern-setting="speed"]')?.addEventListener('click', cycleModernPlaybackSpeed);
+  controls.querySelector('[data-modern-setting="quality"]')?.addEventListener('click', cycleModernQuality);
+  controls.querySelector('.yt-modern-mini')?.addEventListener('click', (e) => { e.stopPropagation(); toggleModernMiniPlayer(); });
+  controls.querySelector('.yt-modern-fullscreen')?.addEventListener('click', (e) => { e.stopPropagation(); toggleModernFullscreen(); });
+
+  wrap.addEventListener('click', (e) => {
+    if (e.target.closest?.('.yt-modern-settings-panel, .yt-modern-settings, .yt-modern-volume-wrap')) return;
+    settingsPanel?.classList.remove('is-open');
+    settingsPanel?.setAttribute('aria-hidden', 'true');
+    settingsButton?.classList.remove('is-active');
+    volumeWrap?.classList.remove('is-open');
+  });
+
+  document.addEventListener('fullscreenchange', () => {
+    controls.querySelector('.yt-modern-fullscreen')?.classList.toggle('is-active', !!document.fullscreenElement);
+  });
+
+  setModernRangeFill(seek, 0);
+  setModernRangeFill(volumeInput, 100);
+  clearInterval(modernPlayerTimer);
+  modernPlayerTimer = setInterval(updateModernPlayerControls, 250);
+  updateModernPlayerControls();
+}
+
 function createYouTubePlayerOnce() {
   if (ytPlayer || !window.YT || typeof window.YT.Player !== "function") return;
 
@@ -764,6 +1136,8 @@ function createYouTubePlayerOnce() {
     playerVars: {
       autoplay: 1,
       rel: 0,
+      controls: 0,
+      fs: 0,
       playsinline: 1,
       hl: "ko",
       cc_lang_pref: YOUTUBE_CAPTION_LANGUAGE,
@@ -776,6 +1150,7 @@ function createYouTubePlayerOnce() {
         playerReady = true;
         apiLoading = false;
         applyKoreanCaptions();
+        ensureModernYouTubeControls();
         keepFiveSecondSeekShortcuts();
         focusPlayerArea();
         flushPlayerReadyQueue();
@@ -912,6 +1287,7 @@ function playMr(i) {
 }
 
 function onPlayerStateChange(e) {
+  updateModernPlayerControls();
   if (e.data !== 0) return; // 0 = ended
 
   if (loopInfinite) {
