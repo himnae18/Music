@@ -144,6 +144,17 @@ let apiReadyQueue = [];
 const YOUTUBE_CAPTION_LANGUAGE = "ko";
 const SEEK_STEP_SECONDS = 5;
 
+// YouTube의 공개 watch-page "Most Replayed"(가장 많이 다시 본 장면) 데이터를
+// 브라우저에서 사용할 수 있도록 공개 운영 API 미러를 통해 읽는다.
+// YouTube Data API / IFrame API 자체에는 이 heatmap 필드가 노출되지 않는다.
+const YOUTUBE_MOST_REPLAYED_ENDPOINTS = [
+  "https://yt.mtdv.me/videos?part=mostReplayed&id=",
+  "https://ytapp.thecurrent.pk/videos?part=mostReplayed&id="
+];
+const modernHeatmapCache = new Map();
+const modernStoryboardCache = new Map();
+let modernHeatmapRequestSerial = 0;
+
 // 모드: seq | rand_once | rand_n | rand_auto | loop_n | loop_inf
 let playMode = "seq";
 let remainingRandom = 0;
@@ -968,6 +979,335 @@ function toggleModernFullscreen() {
   } catch {}
 }
 
+function clampModernHeatmapNumber(value, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+}
+
+function parseModernMostReplayedPayload(payload) {
+  const item = Array.isArray(payload?.items) ? payload.items[0] : null;
+  const raw = item?.mostReplayed;
+  if (!raw || !Array.isArray(raw.markers) || raw.markers.length < 2) return null;
+
+  const markers = raw.markers
+    .map((marker) => ({
+      startMillis: Number(marker?.startMillis),
+      intensityScoreNormalized: Number(marker?.intensityScoreNormalized)
+    }))
+    .filter((marker) => Number.isFinite(marker.startMillis) && Number.isFinite(marker.intensityScoreNormalized))
+    .sort((a, b) => a.startMillis - b.startMillis)
+    .map((marker) => ({
+      startMillis: Math.max(0, marker.startMillis),
+      intensityScoreNormalized: clampModernHeatmapNumber(marker.intensityScoreNormalized, 0, 1)
+    }));
+
+  if (markers.length < 2) return null;
+
+  const gaps = [];
+  for (let i = 1; i < markers.length; i++) {
+    const gap = markers[i].startMillis - markers[i - 1].startMillis;
+    if (gap > 0) gaps.push(gap);
+  }
+  gaps.sort((a, b) => a - b);
+  const typicalGap = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1000;
+  const estimatedDurationMillis = Math.max(1, markers.at(-1).startMillis + typicalGap);
+
+  let peakMarker = markers.reduce((best, marker) =>
+    marker.intensityScoreNormalized > best.intensityScoreNormalized ? marker : best,
+  markers[0]);
+
+  let peakStartMillis = peakMarker.startMillis;
+  let peakEndMillis = peakMarker.startMillis + typicalGap;
+  const timed = Array.isArray(raw.timedMarkerDecorations) ? raw.timedMarkerDecorations : [];
+  if (timed.length) {
+    const decoration = timed.find((d) => {
+      const start = Number(d?.visibleTimeRangeStartMillis);
+      const end = Number(d?.visibleTimeRangeEndMillis);
+      return Number.isFinite(start) && Number.isFinite(end) && peakMarker.startMillis >= start && peakMarker.startMillis <= end;
+    }) || timed[0];
+    const start = Number(decoration?.visibleTimeRangeStartMillis);
+    const end = Number(decoration?.visibleTimeRangeEndMillis);
+    if (Number.isFinite(start)) peakStartMillis = Math.max(0, start);
+    if (Number.isFinite(end) && end > peakStartMillis) peakEndMillis = end;
+    peakMarker = markers.reduce((best, marker) => {
+      if (marker.startMillis < peakStartMillis || marker.startMillis > peakEndMillis) return best;
+      return !best || marker.intensityScoreNormalized > best.intensityScoreNormalized ? marker : best;
+    }, null) || peakMarker;
+  }
+
+  const peakMillis = timed.length
+    ? Math.max(0, (peakStartMillis + peakEndMillis) / 2)
+    : peakMarker.startMillis;
+
+  return {
+    markers,
+    estimatedDurationMillis,
+    peakMillis,
+    peakStartMillis,
+    peakEndMillis
+  };
+}
+
+async function fetchModernMostReplayed(videoId) {
+  const id = String(videoId || '').trim();
+  if (!id) return null;
+  if (modernHeatmapCache.has(id)) return modernHeatmapCache.get(id);
+
+  for (const endpoint of YOUTUBE_MOST_REPLAYED_ENDPOINTS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const response = await fetch(`${endpoint}${encodeURIComponent(id)}`, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        cache: 'force-cache',
+        signal: controller.signal
+      });
+      if (!response.ok) continue;
+      const parsed = parseModernMostReplayedPayload(await response.json());
+      if (parsed) {
+        modernHeatmapCache.set(id, parsed);
+        return parsed;
+      }
+    } catch (error) {
+      // 다음 미러로 자동 폴백한다.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // 영상 자체에 heatmap이 없는 경우도 있으므로 실패 결과도 짧게 캐시한다.
+  modernHeatmapCache.set(id, null);
+  return null;
+}
+
+function makeModernHeatmapCurve(markers, durationMillis) {
+  if (!Array.isArray(markers) || markers.length < 2) return '';
+  const width = 1000;
+  const top = 5;
+  const bottom = 88;
+  const duration = Math.max(1, Number(durationMillis) || 1);
+
+  const points = markers.map((marker) => {
+    const x = clampModernHeatmapNumber((marker.startMillis / duration) * width, 0, width);
+    // YouTube처럼 낮은 값도 완전히 평평해지지 않게 약간 들어 올린다.
+    const strength = Math.pow(clampModernHeatmapNumber(marker.intensityScoreNormalized, 0, 1), 0.72);
+    const y = bottom - strength * (bottom - top);
+    return { x, y };
+  });
+
+  // 끝점은 재생바 양 끝에 맞춘다.
+  points[0].x = 0;
+  points[points.length - 1].x = width;
+
+  let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1];
+    const cur = points[i];
+    const midX = (prev.x + cur.x) / 2;
+    const midY = (prev.y + cur.y) / 2;
+    d += ` Q ${prev.x.toFixed(2)} ${prev.y.toFixed(2)} ${midX.toFixed(2)} ${midY.toFixed(2)}`;
+  }
+  const last = points.at(-1);
+  d += ` T ${last.x.toFixed(2)} ${last.y.toFixed(2)}`;
+  return d;
+}
+
+function getModernStoryboardSpec(videoId) {
+  const id = String(videoId || '').trim();
+  if (!id) return null;
+  if (modernStoryboardCache.has(id)) return modernStoryboardCache.get(id);
+
+  let raw = '';
+  try { raw = String(ytPlayer?.playerInfo?.storyboardFormat || ''); } catch {}
+  if (!raw) return null;
+
+  try { raw = decodeURIComponent(raw); } catch {}
+  const parts = raw.split('|');
+  const base = parts.shift();
+  if (!base || !parts.length) return null;
+
+  const levels = parts.map((part, index) => {
+    const args = part.split('#');
+    if (args.length < 8) return null;
+    const [width, height, count, columns, rows, interval, name, sigh] = args;
+    const spec = {
+      level: index,
+      width: Number(width),
+      height: Number(height),
+      count: Number(count),
+      columns: Number(columns),
+      rows: Number(rows),
+      interval: Number(interval),
+      name: String(name || ''),
+      sigh: String(sigh || '')
+    };
+    if (![spec.width, spec.height, spec.count, spec.columns, spec.rows].every((v) => Number.isFinite(v) && v > 0)) return null;
+    return spec;
+  }).filter(Boolean);
+
+  if (!levels.length) return null;
+  const level = levels.at(-1); // 가장 큰 썸네일 레벨
+  if (!Number.isFinite(level.interval) || level.interval <= 0) {
+    let duration = 0;
+    try { duration = Number(ytPlayer?.getDuration?.()) || 0; } catch {}
+    level.interval = duration > 0 ? (duration * 1000) / level.count : 10000;
+  }
+
+  let urlTemplate = base.replace('$L', String(level.level)).replace('$N', level.name);
+  if (level.sigh) urlTemplate += `${urlTemplate.includes('?') ? '&' : '?'}sigh=${encodeURIComponent(level.sigh)}`;
+
+  const parsed = { ...level, urlTemplate };
+  modernStoryboardCache.set(id, parsed);
+  return parsed;
+}
+
+function getModernStoryboardFrame(videoId, timeMillis) {
+  const spec = getModernStoryboardSpec(videoId);
+  if (!spec) return null;
+
+  const frameIndex = Math.max(0, Math.min(spec.count - 1, Math.floor(Math.max(0, Number(timeMillis) || 0) / Math.max(1, spec.interval))));
+  const perImage = spec.columns * spec.rows;
+  const imageIndex = Math.floor(frameIndex / perImage);
+  const inside = frameIndex % perImage;
+  const col = inside % spec.columns;
+  const row = Math.floor(inside / spec.columns);
+  const url = spec.urlTemplate.replace('$M', String(imageIndex));
+
+  return {
+    url,
+    col,
+    row,
+    columns: spec.columns,
+    rows: spec.rows
+  };
+}
+
+function updateModernSeekPreview(event) {
+  const wrap = document.querySelector('.player-wrap');
+  const controls = wrap?.querySelector('.yt-modern-controls');
+  const progressWrap = controls?.querySelector('.yt-modern-progress-wrap');
+  const preview = progressWrap?.querySelector('.yt-modern-seek-preview');
+  if (!wrap || !progressWrap || !preview) return;
+
+  const rect = progressWrap.getBoundingClientRect();
+  if (!rect.width) return;
+  const x = clampModernHeatmapNumber(Number(event?.clientX) - rect.left, 0, rect.width);
+  const pct = (x / rect.width) * 100;
+  progressWrap.style.setProperty('--seek-preview-pct', `${pct}%`);
+
+  let duration = 0;
+  try { duration = Number(ytPlayer?.getDuration?.()) || 0; } catch {}
+  if (duration <= 0) return;
+  const timeSeconds = duration * (pct / 100);
+  const timeMillis = timeSeconds * 1000;
+
+  const timeEl = preview.querySelector('.yt-modern-seek-preview-time');
+  if (timeEl) timeEl.textContent = formatModernPlayerTime(timeSeconds);
+
+  const id = String(wrap.dataset.videoId || '');
+  const heatmap = modernHeatmapCache.get(id);
+  const replayEl = preview.querySelector('.yt-modern-seek-preview-replayed');
+  if (replayEl) {
+    const inPeak = !!heatmap && timeMillis >= Number(heatmap.peakStartMillis || heatmap.peakMillis || -1)
+      && timeMillis <= Number(heatmap.peakEndMillis || heatmap.peakMillis || -1);
+    replayEl.hidden = !inPeak;
+  }
+
+  const picture = preview.querySelector('.yt-modern-seek-preview-picture');
+  if (picture) {
+    const frame = getModernStoryboardFrame(id, timeMillis);
+    if (frame?.url) {
+      picture.classList.add('has-storyboard');
+      picture.style.backgroundImage = `url("${String(frame.url).replace(/"/g, '%22')}")`;
+      picture.style.backgroundSize = `${frame.columns * 100}% ${frame.rows * 100}%`;
+      const posX = frame.columns > 1 ? (frame.col / (frame.columns - 1)) * 100 : 0;
+      const posY = frame.rows > 1 ? (frame.row / (frame.rows - 1)) * 100 : 0;
+      picture.style.backgroundPosition = `${posX}% ${posY}%`;
+    } else {
+      picture.classList.remove('has-storyboard');
+      picture.style.backgroundImage = '';
+    }
+  }
+}
+
+function clearModernYouTubeHeatmap() {
+  const wrap = document.querySelector('.player-wrap');
+  const controls = wrap?.querySelector('.yt-modern-controls');
+  const progressWrap = controls?.querySelector('.yt-modern-progress-wrap');
+  if (!progressWrap) return;
+
+  progressWrap.classList.remove('has-heatmap', 'heatmap-loading');
+  progressWrap.style.removeProperty('--most-replayed-pct');
+  const line = progressWrap.querySelector('.yt-modern-heatmap-line');
+  const fill = progressWrap.querySelector('.yt-modern-heatmap-fill');
+  if (line) line.setAttribute('d', '');
+  if (fill) fill.setAttribute('d', '');
+  const label = progressWrap.querySelector('.yt-modern-most-replayed-label');
+  if (label) label.hidden = true;
+}
+
+function renderModernYouTubeHeatmap(videoId, heatmap) {
+  const wrap = document.querySelector('.player-wrap');
+  const controls = wrap?.querySelector('.yt-modern-controls');
+  const progressWrap = controls?.querySelector('.yt-modern-progress-wrap');
+  if (!wrap || !progressWrap || String(wrap.dataset.videoId || '') !== String(videoId || '')) return;
+
+  if (!heatmap?.markers?.length) {
+    clearModernYouTubeHeatmap();
+    return;
+  }
+
+  let durationMillis = heatmap.estimatedDurationMillis;
+  try {
+    const playerDuration = Number(ytPlayer?.getDuration?.()) || 0;
+    if (playerDuration > 0) durationMillis = playerDuration * 1000;
+  } catch {}
+
+  const curve = makeModernHeatmapCurve(heatmap.markers, durationMillis);
+  if (!curve) {
+    clearModernYouTubeHeatmap();
+    return;
+  }
+
+  const line = progressWrap.querySelector('.yt-modern-heatmap-line');
+  const fill = progressWrap.querySelector('.yt-modern-heatmap-fill');
+  if (line) line.setAttribute('d', curve);
+  if (fill) fill.setAttribute('d', `${curve} L 1000 96 L 0 96 Z`);
+
+  const peakPct = clampModernHeatmapNumber((heatmap.peakMillis / Math.max(1, durationMillis)) * 100, 0, 100);
+  progressWrap.style.setProperty('--most-replayed-pct', `${peakPct}%`);
+  progressWrap.classList.add('has-heatmap');
+  progressWrap.classList.remove('heatmap-loading');
+
+  const label = progressWrap.querySelector('.yt-modern-most-replayed-label');
+  const time = progressWrap.querySelector('.yt-modern-most-replayed-time');
+  if (label) {
+    label.hidden = false;
+    label.classList.toggle('is-left-edge', peakPct < 18);
+    label.classList.toggle('is-right-edge', peakPct > 82);
+  }
+  if (time) time.textContent = formatModernPlayerTime(heatmap.peakMillis / 1000);
+}
+
+async function loadModernYouTubeHeatmap(videoId) {
+  const id = String(videoId || '').trim();
+  const wrap = document.querySelector('.player-wrap');
+  const progressWrap = wrap?.querySelector('.yt-modern-progress-wrap');
+  if (!id || !wrap || !progressWrap) return;
+
+  const requestSerial = ++modernHeatmapRequestSerial;
+  clearModernYouTubeHeatmap();
+  progressWrap.classList.add('heatmap-loading');
+
+  const heatmap = await fetchModernMostReplayed(id);
+  if (requestSerial !== modernHeatmapRequestSerial) return;
+  if (String(wrap.dataset.videoId || '') !== id) return;
+  renderModernYouTubeHeatmap(id, heatmap);
+}
+
 function ensureModernYouTubeControls() {
   const wrap = document.querySelector('.player-wrap');
   if (!wrap || wrap.querySelector('.yt-modern-controls')) return;
@@ -977,6 +1317,24 @@ function ensureModernYouTubeControls() {
   controls.innerHTML = `
     <div class="yt-modern-bottom">
       <div class="yt-modern-progress-wrap">
+        <div class="yt-modern-heatmap" aria-hidden="true">
+          <svg class="yt-modern-heatmap-svg" viewBox="0 0 1000 100" preserveAspectRatio="none">
+            <path class="yt-modern-heatmap-fill" d=""></path>
+            <path class="yt-modern-heatmap-line" d=""></path>
+          </svg>
+          <span class="yt-modern-most-replayed-pin"></span>
+        </div>
+        <div class="yt-modern-most-replayed-label" hidden>
+          <strong class="yt-modern-most-replayed-time">0:00</strong>
+          <span>가장 많이 다시 본 장면</span>
+        </div>
+        <div class="yt-modern-seek-preview" aria-hidden="true">
+          <div class="yt-modern-seek-preview-picture"></div>
+          <div class="yt-modern-seek-preview-caption">
+            <strong class="yt-modern-seek-preview-time">0:00</strong>
+            <span class="yt-modern-seek-preview-replayed" hidden>가장 많이 다시 본 장면</span>
+          </div>
+        </div>
         <input class="yt-modern-seek yt-modern-range" type="range" min="0" max="1000" value="0" step="1" aria-label="재생 위치" />
       </div>
       <div class="yt-modern-control-row">
@@ -1034,6 +1392,9 @@ function ensureModernYouTubeControls() {
   wrap.appendChild(controls);
 
   const seek = controls.querySelector('.yt-modern-seek');
+  const progressWrap = controls.querySelector('.yt-modern-progress-wrap');
+  progressWrap?.addEventListener('pointermove', updateModernSeekPreview, { passive: true });
+  progressWrap?.addEventListener('pointerenter', updateModernSeekPreview, { passive: true });
   seek?.addEventListener('pointerdown', () => { modernPlayerSeeking = true; });
   seek?.addEventListener('input', () => {
     const pct = Number(seek.value) / 10;
@@ -1087,6 +1448,47 @@ function ensureModernYouTubeControls() {
   controls.querySelector('.yt-modern-cc')?.addEventListener('click', (e) => { e.stopPropagation(); toggleModernCaptions(); });
   const settingsPanel = controls.querySelector('.yt-modern-settings-panel');
   const settingsButton = controls.querySelector('.yt-modern-settings');
+
+  // 유튜브 iframe은 브라우저에 따라 :hover 해제가 늦을 수 있어서
+  // 실제 포인터 위치를 기준으로 커스텀 컨트롤 표시 상태를 직접 관리한다.
+  const showModernControls = () => {
+    wrap.classList.add('modern-controls-visible');
+  };
+
+  const hideModernControls = () => {
+    wrap.classList.remove('modern-controls-visible');
+
+    // 영상 밖으로 나가면 열린 보조 UI도 함께 즉시 닫는다.
+    settingsPanel?.classList.remove('is-open');
+    settingsPanel?.setAttribute('aria-hidden', 'true');
+    settingsButton?.classList.remove('is-active');
+    volumeWrap?.classList.remove('is-open');
+  };
+
+  wrap.classList.remove('modern-controls-visible');
+  wrap.addEventListener('pointerenter', showModernControls, { passive: true });
+  wrap.addEventListener('pointermove', showModernControls, { passive: true });
+  wrap.addEventListener('pointerleave', hideModernControls, { passive: true });
+  wrap.addEventListener('mouseleave', hideModernControls, { passive: true });
+
+  // iframe에서 바로 사이트 바깥 영역으로 나갈 때 parent의 leave 이벤트가
+  // 누락되는 브라우저까지 대비해서 문서의 실제 좌표로 한 번 더 확인한다.
+  document.addEventListener('pointermove', (event) => {
+    const rect = wrap.getBoundingClientRect();
+    const inside =
+      event.clientX >= rect.left &&
+      event.clientX <= rect.right &&
+      event.clientY >= rect.top &&
+      event.clientY <= rect.bottom;
+
+    if (!inside) hideModernControls();
+  }, { passive: true });
+
+  window.addEventListener('blur', hideModernControls);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hideModernControls();
+  });
+
   settingsButton?.addEventListener('click', (e) => {
     e.stopPropagation();
     const open = !settingsPanel?.classList.contains('is-open');
@@ -1125,6 +1527,7 @@ function ensureModernYouTubeControls() {
   clearInterval(modernPlayerTimer);
   modernPlayerTimer = setInterval(updateModernPlayerControls, 250);
   updateModernPlayerControls();
+  clearModernYouTubeHeatmap();
 }
 
 function createYouTubePlayerOnce() {
@@ -1223,8 +1626,13 @@ function play(i, options = {}) {
 
   ensurePlayerReady(() => {
     ytPlayer.loadVideoById(songs[nextIndex].id);
+    loadModernYouTubeHeatmap(songs[nextIndex].id);
     applyKoreanCaptions();
-    setTimeout(() => setPlayerPlaybackRate(desiredPlaybackRate, 0, { silent: true }), 350);
+    setTimeout(() => {
+      setPlayerPlaybackRate(desiredPlaybackRate, 0, { silent: true });
+      const cachedHeatmap = modernHeatmapCache.get(String(songs[nextIndex].id || ''));
+      if (cachedHeatmap) renderModernYouTubeHeatmap(songs[nextIndex].id, cachedHeatmap);
+    }, 350);
   });
 
   showList();
@@ -1277,8 +1685,13 @@ function playMr(i) {
   applyPlayerFrame({ ytUrl: mrUrl, id: mrId });
   ensurePlayerReady(() => {
     ytPlayer.loadVideoById(mrId);
+    loadModernYouTubeHeatmap(mrId);
     applyKoreanCaptions();
-    setTimeout(() => setPlayerPlaybackRate(desiredPlaybackRate, 0, { silent: true }), 350);
+    setTimeout(() => {
+      setPlayerPlaybackRate(desiredPlaybackRate, 0, { silent: true });
+      const cachedHeatmap = modernHeatmapCache.get(String(mrId || ''));
+      if (cachedHeatmap) renderModernYouTubeHeatmap(mrId, cachedHeatmap);
+    }, 350);
   });
 
   showList();
@@ -1288,6 +1701,10 @@ function playMr(i) {
 
 function onPlayerStateChange(e) {
   updateModernPlayerControls();
+  const currentVideoId = String(document.querySelector('.player-wrap')?.dataset.videoId || '');
+  const cachedHeatmap = modernHeatmapCache.get(currentVideoId);
+  if (cachedHeatmap) renderModernYouTubeHeatmap(currentVideoId, cachedHeatmap);
+  getModernStoryboardSpec(currentVideoId);
   if (e.data !== 0) return; // 0 = ended
 
   if (loopInfinite) {
