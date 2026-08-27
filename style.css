@@ -4612,3 +4612,12 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   visibility:hidden !important;
   pointer-events:none !important;
 }
+
+/* 재생바 완전 제거: 레거시/커스텀 재생바가 다시 생성되어도 표시하지 않음 */
+.yt-modern-progress-wrap,
+.yt-modern-seek,
+.yt-modern-heatmap,
+.yt-modern-seek-preview,
+.yt-modern-most-replayed-label{
+  display:none !important;
+}

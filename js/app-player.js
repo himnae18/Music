@@ -1670,7 +1670,8 @@ function createYouTubePlayerOnce() {
     playerVars: {
       autoplay: 1,
       rel: 0,
-      controls: 1,
+      // YouTube 기본 재생바/하단 컨트롤까지 전부 숨긴다.
+      controls: 0,
       fs: 1,
       playsinline: 1,
       hl: "ko",
@@ -1684,7 +1685,7 @@ function createYouTubePlayerOnce() {
         playerReady = true;
         apiLoading = false;
         applyKoreanCaptions();
-        // 사이트에서 만든 커스텀 재생바는 사용하지 않고 YouTube 기본 컨트롤만 사용한다.
+        // 사이트 커스텀 재생바도 남지 않도록 제거한다.
         document.querySelectorAll('.yt-modern-controls').forEach((el) => el.remove());
         keepFiveSecondSeekShortcuts();
         flushPlayerReadyQueue();
