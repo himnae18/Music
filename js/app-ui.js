@@ -2938,6 +2938,153 @@ ${actionButtonHTML}
     renderTagTools();
   }
 
+  function getQuickMoveJoinTitleTag(songs, insertIndex) {
+    if (!isSongCollectionPage()) return "";
+    const leftSong = insertIndex > 0 ? songs[insertIndex - 1] : null;
+    const rightSong = insertIndex < songs.length ? songs[insertIndex] : null;
+    if (!leftSong || !rightSong) return "";
+
+    const leftKey = duplicateSongTitleTagKey(leftSong);
+    const rightKey = duplicateSongTitleTagKey(rightSong);
+    if (!leftKey || leftKey !== rightKey) return "";
+
+    return typeof S.getSongTitleTag === "function"
+      ? String(S.getSongTitleTag(leftSong) || "").trim()
+      : "";
+  }
+
+  function moveCurrentSongToNumber(rawNumber) {
+    const songs = S.songs || [];
+    const currentSong = songs[S.current] || null;
+    if (!currentSong || songs.length === 0) return { ok: false, message: "먼저 옮길 노래를 하나 선택해줘." };
+
+    const targetNumber = Number(String(rawNumber ?? "").trim());
+    if (!Number.isInteger(targetNumber) || targetNumber < 1 || targetNumber > songs.length) {
+      return { ok: false, message: `1부터 ${songs.length} 사이의 숫자를 입력해줘.` };
+    }
+
+    if (pageSortMode !== "manual") {
+      pageSortMode = "manual";
+      localStorage.setItem(pageSortStorageKey, pageSortMode);
+    }
+
+    const sourceIndex = songs.indexOf(currentSong);
+    if (sourceIndex < 0) return { ok: false, message: "선택한 노래를 찾지 못했어." };
+    if (sourceIndex === targetNumber - 1) return { ok: true, moved: false, targetNumber };
+
+    songs.splice(sourceIndex, 1);
+    const insertIndex = Math.max(0, Math.min(targetNumber - 1, songs.length));
+
+    // 번호 이동으로도 같은 노래 두 곡 사이에 들어가면 기존 드래그 동작과 똑같이
+    // 그 묶음의 제목태그를 자동 적용한다.
+    const joinTitleTag = getQuickMoveJoinTitleTag(songs, insertIndex);
+    if (joinTitleTag) applyDuplicateTitleTag(currentSong, joinTitleTag);
+
+    songs.splice(insertIndex, 0, currentSong);
+    S.current = songs.indexOf(currentSong);
+    S.save();
+    showList();
+    updateLyricsDrawer();
+    renderTagTools();
+
+    requestAnimationFrame(() => {
+      document.querySelector(".pl-item.active")?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+    });
+
+    return { ok: true, moved: true, targetNumber, joinedTitleTag: joinTitleTag };
+  }
+
+  function closeQuickMoveModal() {
+    document.getElementById("quickMoveModal")?.classList.remove("open");
+  }
+
+  function openQuickMoveModal() {
+    if (isTagPage() || isLyricsPage()) return;
+
+    const songs = S.songs || [];
+    const currentSong = songs[S.current] || null;
+    if (!currentSong || songs.length === 0) {
+      alert("먼저 옮길 노래를 하나 선택해줘.");
+      return;
+    }
+
+    if (pageSortMode !== "manual") {
+      pageSortMode = "manual";
+      localStorage.setItem(pageSortStorageKey, pageSortMode);
+      showList();
+    }
+
+    let modal = document.getElementById("quickMoveModal");
+    if (!modal) {
+      modal = document.createElement("div");
+      modal.id = "quickMoveModal";
+      modal.className = "modal-overlay quick-move-modal";
+      modal.innerHTML = `
+        <div class="modal-box quick-move-box" onclick="event.stopPropagation();">
+          <h2>번호로 이동</h2>
+          <p id="quickMoveSongTitle" class="quick-move-song-title"></p>
+          <p id="quickMoveHelp" class="quick-move-help"></p>
+          <input id="quickMoveNumber" class="quick-move-number" type="number" min="1" step="1" inputmode="numeric" autocomplete="off" aria-label="이동할 번호">
+          <p id="quickMoveError" class="quick-move-error" aria-live="polite"></p>
+          <div class="modal-actions quick-move-actions">
+            <button id="quickMoveConfirm" class="download-link-btn" type="button">이동</button>
+            <button id="quickMoveCancel" class="download-link-btn video-close-btn" type="button">취소</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+
+      modal.addEventListener("click", closeQuickMoveModal);
+      modal.querySelector("#quickMoveCancel")?.addEventListener("click", closeQuickMoveModal);
+
+      const runMove = () => {
+        const input = modal.querySelector("#quickMoveNumber");
+        const error = modal.querySelector("#quickMoveError");
+        const result = moveCurrentSongToNumber(input?.value || "");
+        if (!result.ok) {
+          if (error) error.textContent = result.message || "이동할 수 없어.";
+          input?.focus();
+          input?.select();
+          return;
+        }
+        closeQuickMoveModal();
+      };
+
+      modal.querySelector("#quickMoveConfirm")?.addEventListener("click", runMove);
+      modal.querySelector("#quickMoveNumber")?.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          runMove();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          closeQuickMoveModal();
+        }
+      });
+    }
+
+    const refreshedSongs = S.songs || [];
+    const refreshedCurrentSong = refreshedSongs[S.current] || currentSong;
+    const currentNumber = Math.max(1, refreshedSongs.indexOf(refreshedCurrentSong) + 1);
+    const titleEl = modal.querySelector("#quickMoveSongTitle");
+    const helpEl = modal.querySelector("#quickMoveHelp");
+    const input = modal.querySelector("#quickMoveNumber");
+    const error = modal.querySelector("#quickMoveError");
+
+    if (titleEl) titleEl.textContent = refreshedCurrentSong?.title || "제목 없음";
+    if (helpEl) helpEl.textContent = `현재 ${currentNumber}번 · 이동할 번호를 입력해줘 (1~${refreshedSongs.length})`;
+    if (input) {
+      input.max = String(refreshedSongs.length);
+      input.value = String(currentNumber);
+    }
+    if (error) error.textContent = "";
+
+    modal.classList.add("open");
+    setTimeout(() => {
+      input?.focus();
+      input?.select();
+    }, 0);
+  }
+
   function openLyricsDrawer(tab = "lyrics") {
     document.body.classList.add("lyrics-open");
     activeTab = normalizeDrawerTab(tab);
@@ -3033,6 +3180,16 @@ ${actionButtonHTML}
     document.getElementById("btnDownload")?.addEventListener("click", copyCurrentVideoUrl);
 
     document.addEventListener("keydown", (e) => {
+      const key = String(e.key || "").toLowerCase();
+      const isQuickMoveShortcut = e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && key === "q";
+      if (isQuickMoveShortcut) {
+        if (document.querySelector(".modal-overlay.open") && !document.getElementById("quickMoveModal")?.classList.contains("open")) return;
+        e.preventDefault();
+        e.stopPropagation();
+        openQuickMoveModal();
+        return;
+      }
+
       if (isTypingTarget(e.target)) return;
       const isBackquote = e.code === "Backquote" || e.key === "`" || e.key === "₩";
       if (!isBackquote) return;
@@ -3040,7 +3197,7 @@ ${actionButtonHTML}
       if (!drawer) return;
       e.preventDefault();
       toggleLyricsDrawer();
-    });
+    }, true);
 
     updateLyricsDrawer();
     renderTagTools();
@@ -3050,6 +3207,9 @@ ${actionButtonHTML}
     updatePageSearchSummary();
   });
 
+  window.openQuickMoveModal = openQuickMoveModal;
+  window.closeQuickMoveModal = closeQuickMoveModal;
+  window.moveCurrentSongToNumber = moveCurrentSongToNumber;
   window.showList = showList;
   window.toggleFavoriteAt = toggleFavoriteAt;
   window.promoteDuplicateToMain = promoteDuplicateToMain;

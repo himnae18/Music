@@ -705,6 +705,54 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
 .modal-actions{ margin-top:12px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
 @keyframes modalPop{ from{ transform:scale(0.95); opacity:0; } to{ transform:scale(1); opacity:1; } }
 
+
+/* Ctrl+Q 빠른 번호 이동 */
+.quick-move-box{
+  width:min(390px, 94%);
+  padding:22px;
+}
+.quick-move-box h2{
+  margin:0 0 10px;
+  font-size:22px;
+}
+.quick-move-song-title{
+  margin:0 0 6px;
+  font-weight:800;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.quick-move-help{
+  margin:0 0 14px;
+  color:#666;
+  font-size:14px;
+  line-height:1.5;
+}
+.quick-move-number{
+  box-sizing:border-box;
+  height:52px;
+  border:2px solid #d8d8df;
+  border-radius:12px;
+  padding:0 14px;
+  font-size:22px;
+  font-weight:800;
+  text-align:center;
+  outline:none;
+}
+.quick-move-number:focus{
+  border-color:#666;
+  box-shadow:0 0 0 3px rgba(0,0,0,0.06);
+}
+.quick-move-error{
+  min-height:20px;
+  margin:7px 0 0;
+  color:#c7334f;
+  font-size:13px;
+}
+.quick-move-actions{
+  margin-top:8px;
+}
+
 /* =========================
    모바일
 ========================= */
