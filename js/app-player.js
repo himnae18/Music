@@ -1222,7 +1222,7 @@ function updateModernSeekPreview(event) {
   if (!rect.width) return;
   const x = clampModernHeatmapNumber(Number(event?.clientX) - rect.left, 0, rect.width);
   const pct = (x / rect.width) * 100;
-  progressWrap.style.setProperty('--seek-preview-pct', `${pct}%`);
+  preview.style.setProperty('--seek-preview-pct', `${pct}%`);
   preview.classList.toggle('is-left-edge', pct < 12);
   preview.classList.toggle('is-right-edge', pct > 88);
 
@@ -1705,9 +1705,6 @@ function createYouTubePlayerOnce() {
       rel: 0,
       // YouTube 기본 재생바/하단 컨트롤까지 전부 숨긴다.
       controls: 0,
-      // 임베드의 부가 오버레이를 가능한 한 줄인다.
-      modestbranding: 1,
-      iv_load_policy: 3,
       fs: 1,
       playsinline: 1,
       hl: "ko",

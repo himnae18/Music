@@ -4004,16 +4004,6 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 }
 
 /*
-  YouTube iframe 자체가 포인터를 받는 순간 iframe 내부의 제목/공유/하단 UI가
-  자체 hover 상태로 남을 수 있다. 투명 상단 레이어가 생기기 전 로딩 순간까지 포함해
-  iframe을 처음부터 포인터 대상에서 제외한다. 영상 조작은 IFrame API로 처리한다.
-*/
-.player-wrap > iframe,
-.player-wrap iframe{
-  pointer-events:none !important;
-}
-
-/*
   iframe 안쪽 YouTube UI는 cross-origin이라 부모 페이지가 직접 숨길 수 없다.
   실제 포인터 입력을 이 투명 레이어가 받게 해서 YouTube 임베드의 제목/공유 UI가
   hover로 다시 뜨지 않게 하고, 재생/탐색은 IFrame API + 아래 커스텀 컨트롤로 처리한다.
@@ -4198,9 +4188,8 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 .yt-modern-progress-wrap.has-heatmap:hover .yt-modern-most-replayed-label.is-right-edge{ transform:translate(-100%, 0); }
 
 .yt-modern-seek-preview{
-  --seek-preview-pct:50%;
   position:absolute;
-  left:var(--seek-preview-pct);
+  left:var(--seek-preview-pct, 50%);
   bottom:50px;
   z-index:9;
   width:min(300px, 34vw);
