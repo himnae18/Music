@@ -1705,6 +1705,9 @@ function createYouTubePlayerOnce() {
       rel: 0,
       // YouTube 기본 재생바/하단 컨트롤까지 전부 숨긴다.
       controls: 0,
+      // 임베드의 부가 오버레이를 가능한 한 줄인다.
+      modestbranding: 1,
+      iv_load_policy: 3,
       fs: 1,
       playsinline: 1,
       hl: "ko",
