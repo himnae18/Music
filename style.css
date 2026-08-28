@@ -4004,6 +4004,43 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 }
 
 /*
+  YouTube iframe의 제목/채널, 공유/나중에 보기, YouTube 로고는
+  cross-origin 내부 UI라 바깥 CSS로 개별 삭제할 수 없다.
+  사이트 커스텀 컨트롤은 그대로 두고 iframe 영상만 약간 확대해서
+  네 모서리의 YouTube 기본 UI가 플레이어 바깥으로 잘리게 한다.
+*/
+.player-wrap > iframe{
+  width:100% !important;
+  height:100% !important;
+  transform:scale(1.18);
+  transform-origin:50% 50%;
+  pointer-events:none !important;
+}
+
+/* 재생/일시정지 직후 YouTube가 중앙에 잠깐 띄우는 원형 피드백만 가린다. */
+.player-interaction-layer::after{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:112px;
+  height:112px;
+  border-radius:50%;
+  transform:translate(-50%,-50%) scale(.86);
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  background:rgba(0,0,0,.14);
+  -webkit-backdrop-filter:blur(34px) saturate(110%);
+  backdrop-filter:blur(34px) saturate(110%);
+  transition:opacity .05s linear, visibility .05s linear;
+}
+.player-wrap.native-action-mask .player-interaction-layer::after{
+  opacity:1;
+  visibility:visible;
+}
+
+/*
   iframe 안쪽 YouTube UI는 cross-origin이라 부모 페이지가 직접 숨길 수 없다.
   실제 포인터 입력을 이 투명 레이어가 받게 해서 YouTube 임베드의 제목/공유 UI가
   hover로 다시 뜨지 않게 하고, 재생/탐색은 IFrame API + 아래 커스텀 컨트롤로 처리한다.

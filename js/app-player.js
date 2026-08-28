@@ -1348,6 +1348,18 @@ async function loadModernYouTubeHeatmap(videoId) {
   renderModernYouTubeHeatmap(id, heatmap);
 }
 
+let modernNativeActionMaskTimer = null;
+function maskModernNativeActionFeedback() {
+  const wrap = document.querySelector('.player-wrap');
+  if (!wrap) return;
+  wrap.classList.add('native-action-mask');
+  if (modernNativeActionMaskTimer) clearTimeout(modernNativeActionMaskTimer);
+  modernNativeActionMaskTimer = setTimeout(() => {
+    wrap.classList.remove('native-action-mask');
+    modernNativeActionMaskTimer = null;
+  }, 1100);
+}
+
 function ensureModernYouTubeControls() {
   const wrap = document.querySelector('.player-wrap');
   if (!wrap || wrap.querySelector('.yt-modern-controls')) return;
@@ -1613,12 +1625,14 @@ function ensureModernYouTubeControls() {
   interactionLayer?.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
+    maskModernNativeActionFeedback();
     togglePlayerPlayPause();
     updateModernPlayerControls();
   });
   interactionLayer?.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' && e.key !== ' ') return;
     e.preventDefault();
+    maskModernNativeActionFeedback();
     togglePlayerPlayPause();
     updateModernPlayerControls();
   });
@@ -1700,6 +1714,7 @@ function createYouTubePlayerOnce() {
   ytPlayer = new YT.Player("player", {
     width: "100%",
     height: "100%",
+    host: "https://www.youtube-nocookie.com",
     playerVars: {
       autoplay: 1,
       rel: 0,
@@ -1710,7 +1725,9 @@ function createYouTubePlayerOnce() {
       hl: "ko",
       cc_lang_pref: YOUTUBE_CAPTION_LANGUAGE,
       cc_load_policy: 1,
-      disablekb: 0
+      disablekb: 1,
+      iv_load_policy: 3,
+      modestbranding: 1
     },
     events: {
       onReady: () => {
