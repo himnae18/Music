@@ -1357,7 +1357,7 @@ function maskModernNativeActionFeedback() {
   modernNativeActionMaskTimer = setTimeout(() => {
     wrap.classList.remove('native-action-mask');
     modernNativeActionMaskTimer = null;
-  }, 1100);
+  }, 180);
 }
 
 function ensureModernYouTubeControls() {
