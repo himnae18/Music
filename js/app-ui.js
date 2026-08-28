@@ -75,6 +75,7 @@
 
   const expandedDuplicateGroups = new Set();
   let dragDuplicateGroupKey = "";
+  let dragDuplicateItemKey = "";
 
   function getDuplicateGroupItems(key, songs = S.songs || []) {
     if (!key) return [];
@@ -1516,17 +1517,20 @@
       const subText = [S.safeText(s.author || ""), sourceBadge, resumeText].filter(Boolean).join(" · ");
       const subHTML = `<div class="pl-sub">${S.escapeHTML(subText)}${duplicateToggleHTML}</div>`;
 
-      let dragAttributes = `draggable="true" ondragstart="onDragStart(event, ${i})" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ${i})"`;
+      let dragAttributes = `draggable="true" ondragstart="onDragStart(event, ${i})" ondragend="onDragEnd(event)" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ${i})"`;
       let handleHTML = `<div class="pl-handle" title="드래그해서 순서 변경" onclick="event.stopPropagation();"><span></span><span></span></div>`;
       if (isLyricsPage()) {
         dragAttributes = `draggable="false"`;
         handleHTML = "";
       } else if (options.isDuplicateChild) {
-        // 같은 제목태그의 하위 항목은 메인과 함께 움직이므로 따로 끌지 않는다.
-        dragAttributes = `draggable="false" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ${i})"`;
-        handleHTML = `<div class="pl-handle duplicate-child-handle" title="메인 영상을 끌면 같이 이동해"><span></span><span></span></div>`;
+        // 같은 노래를 펼친 상태에서는 하위 영상도 직접 드래그할 수 있다.
+        // 같은 묶음 안에서는 개별 순서를 바꾸고, 묶음 밖으로 끌면 묶음 전체를 함께 이동한다.
+        handleHTML = `<div class="pl-handle duplicate-child-handle" title="드래그해서 같은 노래 순서 변경" onclick="event.stopPropagation();"><span></span><span></span></div>`;
       } else if (options.isGroupMain && duplicateCount > 0) {
-        handleHTML = `<div class="pl-handle duplicate-group-handle" title="같은 노래 묶음 전체를 드래그" onclick="event.stopPropagation();"><span></span><span></span></div>`;
+        const groupDragTitle = options.expanded
+          ? "드래그해서 같은 노래 순서 변경 (묶음 밖으로 옮기면 전체 이동)"
+          : "같은 노래 묶음 전체를 드래그";
+        handleHTML = `<div class="pl-handle duplicate-group-handle" title="${groupDragTitle}" onclick="event.stopPropagation();"><span></span><span></span></div>`;
       }
 
       if (pageSortMode !== "manual" && !isLyricsPage()) {
@@ -2620,15 +2624,23 @@ ${actionButtonHTML}
   function onDragStart(e, index) {
     S.dragIndex = index;
     dragDuplicateGroupKey = "";
+    dragDuplicateItemKey = "";
     e.dataTransfer.effectAllowed = "copyMove";
     const song = Array.isArray(S.songs) ? S.songs[index] : null;
     if (song) {
       if (isSongCollectionPage()) {
         const key = duplicateSongTitleTagKey(song);
         const group = getDuplicateGroupItems(key);
-        if (key && group.length > 1 && group[0]?.index === index) {
-          dragDuplicateGroupKey = key;
-          e.dataTransfer.setData("application/x-song-duplicate-group", key);
+        if (key && group.length > 1) {
+          if (expandedDuplicateGroups.has(key)) {
+            // 펼쳐진 묶음은 각 항목을 직접 끌 수 있다.
+            dragDuplicateItemKey = key;
+            e.dataTransfer.setData("application/x-song-duplicate-item", key);
+          } else if (group[0]?.index === index) {
+            // 접힌 묶음은 보이는 메인 항목을 끌면 묶음 전체가 이동한다.
+            dragDuplicateGroupKey = key;
+            e.dataTransfer.setData("application/x-song-duplicate-group", key);
+          }
         }
       }
 
@@ -2637,6 +2649,13 @@ ${actionButtonHTML}
       const url = S.safeLink(song.ytUrl || "");
       if (url) e.dataTransfer.setData("text/plain", url);
     }
+  }
+
+  function onDragEnd() {
+    S.dragIndex = null;
+    dragDuplicateGroupKey = "";
+    dragDuplicateItemKey = "";
+    document.querySelectorAll?.(".tag-song-drop-over").forEach((el) => el.classList.remove("tag-song-drop-over"));
   }
 
   function onDragOver(e) {
@@ -2702,37 +2721,86 @@ ${actionButtonHTML}
     const dragIndex = S.dragIndex;
     if (dragIndex === null || dragIndex === dropIndex) {
       dragDuplicateGroupKey = "";
+      dragDuplicateItemKey = "";
       return;
     }
 
     const songs = S.songs;
 
-    // 노래 페이지의 메인 곡을 끌면 같은 제목태그 묶음 전체를 한 덩어리로 이동한다.
-    // 드롭한 항목 "바로 앞"에 넣기 때문에 아래로 끌어도 중간 항목들이 자연스럽게 위로 밀린다.
-    if (isSongCollectionPage() && dragDuplicateGroupKey) {
-      const groupItems = getDuplicateGroupItems(dragDuplicateGroupKey, songs);
-      const dropSong = songs[dropIndex] || null;
-      const groupSongs = groupItems.map((item) => item.song);
-      if (dropSong && !groupSongs.includes(dropSong) && groupSongs.length > 1) {
-        const currentSong = songs[S.current] || null;
-        for (let i = songs.length - 1; i >= 0; i--) {
-          if (duplicateSongTitleTagKey(songs[i]) === dragDuplicateGroupKey) songs.splice(i, 1);
-        }
-        let insertIndex = dropSong ? songs.indexOf(dropSong) : songs.length;
-        if (insertIndex < 0) insertIndex = songs.length;
-        songs.splice(insertIndex, 0, ...groupSongs);
-        if (currentSong) {
-          const nextCurrent = songs.indexOf(currentSong);
-          if (nextCurrent >= 0) S.current = nextCurrent;
-        }
+    const finishPlaylistDrag = (currentSong) => {
+      if (currentSong) {
+        const nextCurrent = songs.indexOf(currentSong);
+        if (nextCurrent >= 0) S.current = nextCurrent;
       }
-
       dragDuplicateGroupKey = "";
+      dragDuplicateItemKey = "";
       S.dragIndex = null;
       S.save();
       showList();
       updateLyricsDrawer();
       renderTagTools();
+    };
+
+    const stableDropAnchor = (dropSong, movingKey = "") => {
+      if (!dropSong) return null;
+      const targetKey = duplicateSongTitleTagKey(dropSong);
+      if (!targetKey || targetKey === movingKey) return dropSong;
+      const targetGroup = getDuplicateGroupItems(targetKey, songs);
+      return targetGroup[0]?.song || dropSong;
+    };
+
+    // 같은 노래 묶음을 펼친 상태에서는 각 항목을 직접 드래그할 수 있다.
+    // 같은 묶음 안에 놓으면 그 곡만 순서를 바꾸고, 묶음 밖으로 놓으면
+    // 같은 노래들이 흩어지지 않도록 묶음 전체를 한 덩어리로 옮긴다.
+    if (isSongCollectionPage() && dragDuplicateItemKey) {
+      const movingKey = dragDuplicateItemKey;
+      const dragSong = songs[dragIndex] || null;
+      const dropSong = songs[dropIndex] || null;
+      const dropKey = duplicateSongTitleTagKey(dropSong);
+      const currentSong = songs[S.current] || null;
+
+      if (dragSong && dropSong && dropKey === movingKey) {
+        const moved = songs.splice(dragIndex, 1)[0];
+        songs.splice(dropIndex, 0, moved);
+        finishPlaylistDrag(currentSong);
+        return;
+      }
+
+      const groupItems = getDuplicateGroupItems(movingKey, songs);
+      const groupSongs = groupItems.map((item) => item.song);
+      if (groupSongs.length > 1 && dropSong && !groupSongs.includes(dropSong)) {
+        const anchorSong = stableDropAnchor(dropSong, movingKey);
+        for (let i = songs.length - 1; i >= 0; i--) {
+          if (duplicateSongTitleTagKey(songs[i]) === movingKey) songs.splice(i, 1);
+        }
+        let insertIndex = anchorSong ? songs.indexOf(anchorSong) : songs.length;
+        if (insertIndex < 0) insertIndex = songs.length;
+        songs.splice(insertIndex, 0, ...groupSongs);
+      }
+
+      finishPlaylistDrag(currentSong);
+      return;
+    }
+
+    // 노래 페이지의 메인 곡을 끌면 같은 제목태그 묶음 전체를 한 덩어리로 이동한다.
+    // 드롭한 항목 "바로 앞"에 넣기 때문에 아래로 끌어도 중간 항목들이 자연스럽게 위로 밀린다.
+    if (isSongCollectionPage() && dragDuplicateGroupKey) {
+      const movingKey = dragDuplicateGroupKey;
+      const groupItems = getDuplicateGroupItems(movingKey, songs);
+      const dropSong = songs[dropIndex] || null;
+      const groupSongs = groupItems.map((item) => item.song);
+      const currentSong = songs[S.current] || null;
+      if (dropSong && !groupSongs.includes(dropSong) && groupSongs.length > 1) {
+        const anchorSong = stableDropAnchor(dropSong, movingKey);
+        for (let i = songs.length - 1; i >= 0; i--) {
+          if (duplicateSongTitleTagKey(songs[i]) === movingKey) songs.splice(i, 1);
+        }
+        let insertIndex = anchorSong ? songs.indexOf(anchorSong) : songs.length;
+        if (insertIndex < 0) insertIndex = songs.length;
+        songs.splice(insertIndex, 0, ...groupSongs);
+      }
+
+      finishPlaylistDrag(currentSong);
       return;
     }
 
@@ -2744,6 +2812,7 @@ ${actionButtonHTML}
     else if (dragIndex > S.current && dropIndex <= S.current) S.current++;
 
     dragDuplicateGroupKey = "";
+    dragDuplicateItemKey = "";
     S.dragIndex = null;
     S.save();
     showList();
@@ -2870,6 +2939,7 @@ ${actionButtonHTML}
   window.renderTagTools = renderTagTools;
   window.renderTagPlayerSummary = renderTagPlayerSummary;
   window.onDragStart = onDragStart;
+  window.onDragEnd = onDragEnd;
   window.onDragOver = onDragOver;
   window.onDragLeave = onDragLeave;
   window.onDrop = onDrop;

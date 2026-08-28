@@ -3885,8 +3885,8 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   font-size:10px;
   font-weight:900;
 }
-.duplicate-child-handle{ opacity:.22; cursor:default; }
-.duplicate-group-handle{ opacity:.75; }
+.duplicate-child-handle{ opacity:.58; cursor:grab; }
+.duplicate-group-handle{ opacity:.75; cursor:grab; }
 
 
 /* 20260728: 오른쪽 제목태그 모음 + 태그 드래그해서 재생목록 영상에 넣기 */
