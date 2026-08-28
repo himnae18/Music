@@ -4017,6 +4017,18 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   pointer-events:none !important;
 }
 
+/*
+  자막 위에 마우스를 올렸을 때만 잠깐 YouTube iframe 자체가 입력을 받는다.
+  그래서 YouTube에서처럼 자막 박스를 클릭한 채 드래그해 위치를 옮길 수 있고,
+  평소에는 기존 투명 레이어가 입력을 받아 제목/공유 UI 잔상이 다시 뜨는 것을 막는다.
+*/
+.player-wrap.caption-native-interaction > iframe{
+  pointer-events:auto !important;
+}
+.player-wrap.caption-native-interaction .player-interaction-layer{
+  pointer-events:none !important;
+}
+
 /* 재생/일시정지 직후 YouTube가 중앙에 잠깐 띄우는 원형 피드백만 가린다. */
 .player-interaction-layer::after{
   content:"";

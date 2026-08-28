@@ -906,6 +906,7 @@ function toggleModernCaptions() {
   if (modernCaptionsEnabled) {
     applyKoreanCaptions();
   } else {
+    document.querySelector('.player-wrap')?.classList.remove('caption-native-interaction');
     try { ytPlayer?.unloadModule?.('captions'); } catch {}
     try { ytPlayer?.unloadModule?.('cc'); } catch {}
   }
@@ -1621,6 +1622,48 @@ function ensureModernYouTubeControls() {
 
   wrap.classList.remove('modern-controls-visible');
 
+  // YouTube 자막은 iframe 내부 요소라 부모 페이지에서 직접 위치를 바꿀 수 없다.
+  // 대신 자막이 있는 하단 중앙 영역에 마우스를 올리면 잠깐 iframe에 포인터를 넘겨
+  // YouTube 자체의 '자막 클릭 + 드래그 이동' 동작을 그대로 사용할 수 있게 한다.
+  // 영역을 벗어나면 다시 투명 상호작용 레이어가 입력을 받아 기존 커스텀 UI를 유지한다.
+  let captionNativeInteractionTimer = null;
+  const CAPTION_NATIVE_INTERACTION_MS = 7000;
+
+  const stopCaptionNativeInteraction = () => {
+    if (captionNativeInteractionTimer) {
+      clearTimeout(captionNativeInteractionTimer);
+      captionNativeInteractionTimer = null;
+    }
+    wrap.classList.remove('caption-native-interaction');
+  };
+
+  const startCaptionNativeInteraction = () => {
+    if (!modernCaptionsEnabled) return;
+    wrap.classList.add('caption-native-interaction');
+    // 드래그할 때 아래 커스텀 바가 자막 위를 가로막지 않도록 잠깐 숨긴다.
+    hideModernControls(true);
+    if (captionNativeInteractionTimer) clearTimeout(captionNativeInteractionTimer);
+    captionNativeInteractionTimer = setTimeout(stopCaptionNativeInteraction, CAPTION_NATIVE_INTERACTION_MS);
+  };
+
+  const isInCaptionDragActivationZone = (event) => {
+    const rect = wrap.getBoundingClientRect();
+    if (!rect.width || !rect.height) return false;
+    const x = (Number(event.clientX) - rect.left) / rect.width;
+    const y = (Number(event.clientY) - rect.top) / rect.height;
+
+    // YouTube 기본 자막이 나타나는 하단 중앙을 넉넉하게 잡는다.
+    // 첫 드래그가 시작되면 iframe이 포인터를 계속 받아 영역 밖까지 자연스럽게 이동 가능하다.
+    return x >= 0.12 && x <= 0.88 && y >= 0.62 && y <= 0.985;
+  };
+
+  interactionLayer?.addEventListener('pointermove', (e) => {
+    if (!modernCaptionsEnabled || !isInCaptionDragActivationZone(e)) return;
+    startCaptionNativeInteraction();
+    // 같은 이동 이벤트가 부모 wrap으로 버블되어 컨트롤을 다시 띄우는 것을 막는다.
+    e.stopPropagation();
+  }, { passive: true });
+
   // iframe 대신 이 레이어에서 클릭을 받아 재생/일시정지를 수행한다.
   interactionLayer?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1639,8 +1682,14 @@ function ensureModernYouTubeControls() {
 
   wrap.addEventListener('pointerenter', showModernControls, { passive: true });
   wrap.addEventListener('pointermove', showModernControls, { passive: true });
-  wrap.addEventListener('pointerleave', () => hideModernControls(true), { passive: true });
-  wrap.addEventListener('mouseleave', () => hideModernControls(true), { passive: true });
+  wrap.addEventListener('pointerleave', () => {
+    stopCaptionNativeInteraction();
+    hideModernControls(true);
+  }, { passive: true });
+  wrap.addEventListener('mouseleave', () => {
+    stopCaptionNativeInteraction();
+    hideModernControls(true);
+  }, { passive: true });
 
   // 플레이어 영역에서 손을 떼고 가만히 두면 유튜브처럼 자동으로 숨긴다.
   wrap.addEventListener('pointerup', () => scheduleModernControlsHide(700), { passive: true });
@@ -1658,13 +1707,17 @@ function ensureModernYouTubeControls() {
       event.clientY <= rect.bottom;
 
     if (!inside) {
+      stopCaptionNativeInteraction();
       hideModernControls(true);
     }
   }, { passive: true });
 
   window.addEventListener('blur', () => hideModernControls(true));
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) hideModernControls(true);
+    if (document.hidden) {
+      stopCaptionNativeInteraction();
+      hideModernControls(true);
+    }
   });
 
   settingsButton?.addEventListener('click', (e) => {
