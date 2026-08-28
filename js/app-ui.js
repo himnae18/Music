@@ -2732,6 +2732,61 @@ ${actionButtonHTML}
     renderTagTools();
   }
 
+  // 펼쳐 둔 "같은 노래" 묶음의 두 항목 사이에 다른 노래를 떨어뜨리면
+  // 그 노래를 해당 묶음에 편입한다. 이때 기존 제목태그는 제거하고
+  // 대상 묶음의 제목태그를 자동으로 붙여서 이후에도 같은 노래로 유지한다.
+  function getDuplicateJoinDropInfo(e, dropIndex, dragIndex) {
+    if (!isSongCollectionPage() || dragDuplicateGroupKey || dragDuplicateItemKey) return null;
+
+    const songs = S.songs || [];
+    const movingSong = songs[dragIndex] || null;
+    const dropSong = songs[dropIndex] || null;
+    if (!movingSong || !dropSong || movingSong === dropSong) return null;
+
+    const targetKey = duplicateSongTitleTagKey(dropSong);
+    if (!targetKey || duplicateSongTitleTagKey(movingSong) === targetKey) return null;
+    if (!expandedDuplicateGroups.has(targetKey)) return null;
+
+    const targetItems = getDuplicateGroupItems(targetKey, songs);
+    if (targetItems.length < 2) return null;
+    const targetPosition = targetItems.findIndex(({ song }) => song === dropSong);
+    if (targetPosition < 0) return null;
+
+    const row = e?.currentTarget;
+    const rect = row?.getBoundingClientRect?.();
+    const dropAfter = !!rect && Number.isFinite(e?.clientY)
+      ? e.clientY >= rect.top + rect.height / 2
+      : false;
+
+    // 묶음의 바깥쪽 경계(첫 곡 위 / 마지막 곡 아래)는 일반 순서 이동으로 둔다.
+    // 실제로 두 같은 노래 "사이"에 놓았을 때만 자동 편입한다.
+    const isInsideBoundary = dropAfter
+      ? targetPosition < targetItems.length - 1
+      : targetPosition > 0;
+    if (!isInsideBoundary) return null;
+
+    const titleTag = typeof S.getSongTitleTag === "function"
+      ? String(S.getSongTitleTag(dropSong) || "").trim()
+      : "";
+    if (!titleTag) return null;
+
+    return { dropSong, dropAfter, targetKey, titleTag };
+  }
+
+  function applyDuplicateTitleTag(song, titleTag) {
+    if (!song || !titleTag) return;
+    const allTitleTags = new Set(
+      typeof S.readTitleTags === "function"
+        ? S.readTitleTags().map((tag) => S.normalizeTag ? S.normalizeTag(tag) : String(tag || "").trim()).filter(Boolean)
+        : []
+    );
+    const cleanTitleTag = S.normalizeTag ? S.normalizeTag(titleTag) : String(titleTag || "").trim();
+    let nextTags = (S.normalizeTags ? S.normalizeTags(song.tags) : Array.isArray(song.tags) ? song.tags : [])
+      .filter((tag) => !allTitleTags.has(tag));
+    nextTags = S.addTags ? S.addTags(nextTags, [cleanTitleTag]) : [...nextTags, cleanTitleTag];
+    song.tags = S.applyTitleFixedTagsToTags ? S.applyTitleFixedTagsToTags(nextTags) : nextTags;
+  }
+
   function onDrop(e, dropIndex) {
     e.preventDefault();
     e.currentTarget?.classList?.remove("tag-song-drop-over");
@@ -2769,6 +2824,7 @@ ${actionButtonHTML}
     }
 
     const songs = S.songs;
+    const duplicateJoinInfo = getDuplicateJoinDropInfo(e, dropIndex, dragIndex);
 
     const finishPlaylistDrag = (currentSong) => {
       if (currentSong) {
@@ -2791,6 +2847,25 @@ ${actionButtonHTML}
       const targetGroup = getDuplicateGroupItems(targetKey, songs);
       return targetGroup[0]?.song || dropSong;
     };
+
+    // 다른 노래를 펼쳐 둔 같은 노래들의 "사이"에 놓으면 그 묶음으로 편입한다.
+    // 제목태그까지 자동으로 바뀌므로 다시 렌더링해도 묶음 밖으로 빠지지 않는다.
+    if (duplicateJoinInfo) {
+      const currentSong = songs[S.current] || null;
+      const moved = songs.splice(dragIndex, 1)[0];
+      if (moved) {
+        applyDuplicateTitleTag(moved, duplicateJoinInfo.titleTag);
+        const anchorIndex = songs.indexOf(duplicateJoinInfo.dropSong);
+        let insertIndex = anchorIndex >= 0
+          ? anchorIndex + (duplicateJoinInfo.dropAfter ? 1 : 0)
+          : songs.length;
+        insertIndex = Math.max(0, Math.min(insertIndex, songs.length));
+        songs.splice(insertIndex, 0, moved);
+        expandedDuplicateGroups.add(duplicateJoinInfo.targetKey);
+      }
+      finishPlaylistDrag(currentSong);
+      return;
+    }
 
     // 같은 노래 묶음을 펼친 상태에서는 각 항목을 직접 드래그할 수 있다.
     // 같은 묶음 안에 놓으면 그 곡만 순서를 바꾸고, 묶음 밖으로 놓으면
