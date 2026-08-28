@@ -4134,6 +4134,36 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   justify-content:center;
   gap:5px;
 }
+.pl-action-top{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:5px;
+}
+.duplicate-promote-btn{
+  width:34px;
+  height:28px;
+  min-height:28px;
+  margin:0;
+  padding:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid #d8d0e8;
+  border-radius:9px;
+  background:#fff;
+  color:#7656aa;
+  font-size:17px;
+  font-weight:900;
+  line-height:1;
+  box-shadow:none;
+  cursor:pointer;
+}
+.duplicate-promote-btn:hover{
+  background:#f4edff;
+  border-color:#bba9dc;
+  color:#5f379f;
+}
 .pl-favorite-btn{
   width:34px;
   height:28px;

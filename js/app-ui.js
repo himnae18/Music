@@ -1495,6 +1495,9 @@
       const statusLabel = hasMr ? "MR" : "없음";
       const sourceBadge = isCombinedLibraryPage() ? collectionBadgeText(s) : "";
       const favoriteButtonHTML = `<button class="pl-favorite-btn${s.favorite ? " is-favorite" : ""}" type="button" title="${s.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}" aria-label="${s.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}" onclick="event.stopPropagation(); toggleFavoriteAt(${i});">${s.favorite ? "★" : "☆"}</button>`;
+      const promoteButtonHTML = options.isDuplicateChild
+        ? `<button class="duplicate-promote-btn" type="button" title="이 영상을 대표 썸네일로 올리기" aria-label="이 영상을 대표 썸네일로 올리기" onclick="event.stopPropagation(); promoteDuplicateToMain(${i});">✓</button>`
+        : "";
       const statusButtonHTML = isYoutubeCollectionPage()
         ? `<button class="pl-mr-status pl-add-status" type="button" title="현재 목록에서 숨기고 태그 설명에 기록" onclick="event.stopPropagation(); archivePlaylistSong(${i});">추가</button>`
         : `<button class="pl-mr-status ${statusClass}" type="button"
@@ -1502,7 +1505,10 @@
             onclick="event.stopPropagation(); playMr(${i});">
             ${statusLabel}
           </button>`;
-      const actionButtonHTML = `<div class="pl-actions">${favoriteButtonHTML}${statusButtonHTML}</div>`;
+      const actionTopHTML = promoteButtonHTML
+        ? `<div class="pl-action-top">${favoriteButtonHTML}${promoteButtonHTML}</div>`
+        : favoriteButtonHTML;
+      const actionButtonHTML = `<div class="pl-actions">${actionTopHTML}${statusButtonHTML}</div>`;
 
       const duplicateCount = Number(options.duplicateCount || 0);
       const duplicateToggleHTML = options.isGroupMain && duplicateCount > 0
@@ -2621,6 +2627,43 @@ ${actionButtonHTML}
     bindMusicTagDragSources(holder);
   }
 
+  // 펼쳐진 "같은 노래"에서 체크한 영상을 대표(맨 위)로 바꾼다.
+  // 기존 대표 영상은 새 대표 영상의 바로 아래(두 번째)로 내려가고,
+  // 나머지 같은 노래의 상대 순서는 그대로 유지한다.
+  function promoteDuplicateToMain(index) {
+    if (!isSongCollectionPage()) return;
+    const songs = S.songs || [];
+    const selectedSong = songs[index] || null;
+    const key = duplicateSongTitleTagKey(selectedSong);
+    if (!selectedSong || !key) return;
+
+    const groupItems = getDuplicateGroupItems(key, songs);
+    if (groupItems.length < 2 || groupItems[0]?.song === selectedSong) return;
+
+    const currentSong = songs[S.current] || null;
+    const groupSongs = groupItems.map(({ song }) => song);
+    const oldMainSong = groupSongs[0] || null;
+    const remainingSongs = groupSongs.filter((song) => song !== selectedSong && song !== oldMainSong);
+    const reorderedGroup = [selectedSong, oldMainSong, ...remainingSongs].filter(Boolean);
+    const insertIndex = Math.min(...groupItems.map(({ index: itemIndex }) => itemIndex));
+
+    for (let i = songs.length - 1; i >= 0; i--) {
+      if (duplicateSongTitleTagKey(songs[i]) === key) songs.splice(i, 1);
+    }
+    songs.splice(insertIndex, 0, ...reorderedGroup);
+
+    if (currentSong) {
+      const nextCurrent = songs.indexOf(currentSong);
+      if (nextCurrent >= 0) S.current = nextCurrent;
+    }
+
+    expandedDuplicateGroups.add(key);
+    S.save();
+    showList();
+    updateLyricsDrawer();
+    renderTagTools();
+  }
+
   function onDragStart(e, index) {
     S.dragIndex = index;
     dragDuplicateGroupKey = "";
@@ -2934,6 +2977,7 @@ ${actionButtonHTML}
 
   window.showList = showList;
   window.toggleFavoriteAt = toggleFavoriteAt;
+  window.promoteDuplicateToMain = promoteDuplicateToMain;
   window.updateLyricsDrawer = updateLyricsDrawer;
   window.archivePlaylistSong = archivePlaylistSong;
   window.renderTagTools = renderTagTools;
