@@ -4018,15 +4018,57 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 }
 
 /*
-  자막 위에 마우스를 올렸을 때만 잠깐 YouTube iframe 자체가 입력을 받는다.
-  그래서 YouTube에서처럼 자막 박스를 클릭한 채 드래그해 위치를 옮길 수 있고,
-  평소에는 기존 투명 레이어가 입력을 받아 제목/공유 UI 잔상이 다시 뜨는 것을 막는다.
+  자막 이동이 필요할 때만 하단 중앙에 작은 입력 구멍을 열어
+  YouTube 자막 드래그를 최대한 그대로 쓰게 한다.
+  구멍 바깥은 투명 차단판이 계속 가리고 있어서 제목/공유 UI 잔상이 다시 뜨지 않는다.
 */
 .player-wrap.caption-native-interaction > iframe{
   pointer-events:auto !important;
 }
 .player-wrap.caption-native-interaction .player-interaction-layer{
   pointer-events:none !important;
+}
+.player-wrap.caption-native-interaction .yt-modern-controls{
+  opacity:0 !important;
+  visibility:hidden !important;
+}
+.caption-native-shield{
+  position:absolute;
+  inset:0;
+  z-index:14;
+  display:none;
+}
+.player-wrap.caption-native-interaction .caption-native-shield{
+  display:block;
+}
+.caption-native-block{
+  position:absolute;
+  background:transparent;
+  pointer-events:auto;
+}
+.caption-native-block-top{
+  left:0;
+  top:0;
+  width:100%;
+  height:60%;
+}
+.caption-native-block-left{
+  left:0;
+  top:60%;
+  width:18%;
+  height:27%;
+}
+.caption-native-block-right{
+  right:0;
+  top:60%;
+  width:18%;
+  height:27%;
+}
+.caption-native-block-bottom{
+  left:0;
+  top:87%;
+  width:100%;
+  height:13%;
 }
 
 /* 재생/일시정지 직후 YouTube가 중앙에 잠깐 띄우는 원형 피드백만 가린다. */

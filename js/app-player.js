@@ -1459,6 +1459,19 @@ function ensureModernYouTubeControls() {
     wrap.insertBefore(interactionLayer, controls);
   }
 
+  let captionNativeShield = wrap.querySelector('.caption-native-shield');
+  if (!captionNativeShield) {
+    captionNativeShield = document.createElement('div');
+    captionNativeShield.className = 'caption-native-shield';
+    captionNativeShield.setAttribute('aria-hidden', 'true');
+    captionNativeShield.innerHTML = `
+      <div class="caption-native-block caption-native-block-top"></div>
+      <div class="caption-native-block caption-native-block-left"></div>
+      <div class="caption-native-block caption-native-block-right"></div>
+      <div class="caption-native-block caption-native-block-bottom"></div>`;
+    wrap.insertBefore(captionNativeShield, controls);
+  }
+
   const seek = controls.querySelector('.yt-modern-seek');
   const progressWrap = controls.querySelector('.yt-modern-progress-wrap');
   let modernSeekPointerActive = false;
@@ -1616,6 +1629,7 @@ function ensureModernYouTubeControls() {
   };
 
   const showModernControls = () => {
+    if (wrap.classList.contains('caption-native-interaction')) return;
     wrap.classList.add('modern-controls-visible');
     scheduleModernControlsHide();
   };
@@ -1623,11 +1637,11 @@ function ensureModernYouTubeControls() {
   wrap.classList.remove('modern-controls-visible');
 
   // YouTube 자막은 iframe 내부 요소라 부모 페이지에서 직접 위치를 바꿀 수 없다.
-  // 대신 자막이 있는 하단 중앙 영역에 마우스를 올리면 잠깐 iframe에 포인터를 넘겨
-  // YouTube 자체의 '자막 클릭 + 드래그 이동' 동작을 그대로 사용할 수 있게 한다.
-  // 영역을 벗어나면 다시 투명 상호작용 레이어가 입력을 받아 기존 커스텀 UI를 유지한다.
+  // 그래서 자막이 보이는 하단 중앙에만 잠깐 입력 구멍(hole)을 열어
+  // YouTube 자체의 '자막 클릭 + 드래그 이동' 동작을 최대한 그대로 쓸 수 있게 한다.
+  // 구멍 바깥 영역은 계속 사이트 레이어가 막아 제목/공유/중앙 피드백 잔상이 뜨지 않게 유지한다.
   let captionNativeInteractionTimer = null;
-  const CAPTION_NATIVE_INTERACTION_MS = 7000;
+  const CAPTION_NATIVE_INTERACTION_MS = 2400;
 
   const stopCaptionNativeInteraction = () => {
     if (captionNativeInteractionTimer) {
@@ -1640,7 +1654,6 @@ function ensureModernYouTubeControls() {
   const startCaptionNativeInteraction = () => {
     if (!modernCaptionsEnabled) return;
     wrap.classList.add('caption-native-interaction');
-    // 드래그할 때 아래 커스텀 바가 자막 위를 가로막지 않도록 잠깐 숨긴다.
     hideModernControls(true);
     if (captionNativeInteractionTimer) clearTimeout(captionNativeInteractionTimer);
     captionNativeInteractionTimer = setTimeout(stopCaptionNativeInteraction, CAPTION_NATIVE_INTERACTION_MS);
@@ -1652,18 +1665,16 @@ function ensureModernYouTubeControls() {
     const x = (Number(event.clientX) - rect.left) / rect.width;
     const y = (Number(event.clientY) - rect.top) / rect.height;
 
-    // YouTube 기본 자막이 나타나는 하단 중앙을 넉넉하게 잡는다.
-    // 첫 드래그가 시작되면 iframe이 포인터를 계속 받아 영역 밖까지 자연스럽게 이동 가능하다.
-    return x >= 0.12 && x <= 0.88 && y >= 0.62 && y <= 0.985;
+    // 자막이 보이는 영역만 좁게 잡아 hover만으로 유튜브 기본 오버레이가
+    // 과하게 드러나는 일을 줄인다.
+    return x >= 0.18 && x <= 0.82 && y >= 0.60 && y <= 0.87;
   };
 
   interactionLayer?.addEventListener('pointermove', (e) => {
     if (!modernCaptionsEnabled || !isInCaptionDragActivationZone(e)) return;
     startCaptionNativeInteraction();
-    // 같은 이동 이벤트가 부모 wrap으로 버블되어 컨트롤을 다시 띄우는 것을 막는다.
     e.stopPropagation();
   }, { passive: true });
-
   // iframe 대신 이 레이어에서 클릭을 받아 재생/일시정지를 수행한다.
   interactionLayer?.addEventListener('click', (e) => {
     e.preventDefault();
@@ -1712,7 +1723,10 @@ function ensureModernYouTubeControls() {
     }
   }, { passive: true });
 
-  window.addEventListener('blur', () => hideModernControls(true));
+  window.addEventListener('blur', () => {
+    stopCaptionNativeInteraction();
+    hideModernControls(true);
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       stopCaptionNativeInteraction();
