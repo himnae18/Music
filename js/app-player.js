@@ -144,13 +144,6 @@ let apiReadyQueue = [];
 const YOUTUBE_CAPTION_LANGUAGE = "ko";
 const SEEK_STEP_SECONDS = 5;
 
-// YouTube 기본 iframe 컨트롤은 숨김 시간을 외부에서 조절할 수 없어서,
-// 영상/기본 자막은 그대로 두고 조작 UI만 사이트 레이어에서 가볍게 제어한다.
-// 포인터가 플레이어 밖으로 나가면 0.15초 안에 숨긴다.
-const FAST_PLAYER_HIDE_DELAY_MS = 150;
-let fastPlayerCaptionEnabled = true;
-let fastPlayerTicker = null;
-
 // 모드: seq | rand_once | rand_n | rand_auto | loop_n | loop_inf
 let playMode = "seq";
 let remainingRandom = 0;
@@ -355,291 +348,6 @@ function applyKoreanCaptions() {
   apply();
   window.setTimeout(apply, 450);
   window.setTimeout(apply, 1200);
-}
-
-
-function formatFastPlayerTime(value) {
-  const total = Math.max(0, Math.floor(Number(value) || 0));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-function fastPlayerIcon(name) {
-  const common = 'viewBox="0 0 24 24" aria-hidden="true" focusable="false"';
-  if (name === "pause") return `<svg ${common}><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>`;
-  if (name === "play") return `<svg ${common}><path d="M8 5v14l11-7z"/></svg>`;
-  if (name === "volume-off") return `<svg ${common}><path d="M4 9v6h4l5 4V5L8 9H4zm12.2 3 2.4-2.4 1.4 1.4-2.4 2.4 2.4 2.4-1.4 1.4-2.4-2.4-2.4 2.4-1.4-1.4 2.4-2.4-2.4-2.4 1.4-1.4 2.4 2.4z"/></svg>`;
-  if (name === "volume") return `<svg ${common}><path d="M4 9v6h4l5 4V5L8 9H4zm11.5-2.5-1.4 1.4A5.8 5.8 0 0 1 16 12a5.8 5.8 0 0 1-1.9 4.1l1.4 1.4A7.8 7.8 0 0 0 18 12a7.8 7.8 0 0 0-2.5-5.5zm2.8-2.8-1.4 1.4A9.7 9.7 0 0 1 20 12a9.7 9.7 0 0 1-3.1 6.9l1.4 1.4A11.7 11.7 0 0 0 22 12a11.7 11.7 0 0 0-3.7-8.3z"/></svg>`;
-  if (name === "fullscreen") return `<svg ${common}><path d="M5 5h6v2H7v4H5V5zm8 0h6v6h-2V7h-4V5zM5 13h2v4h4v2H5v-6zm12 0h2v6h-6v-2h4v-4z"/></svg>`;
-  return "";
-}
-
-function toggleFastPlayerFullscreen() {
-  const wrap = document.querySelector(".player-wrap");
-  if (!wrap) return;
-  const active = document.fullscreenElement || document.webkitFullscreenElement;
-  if (active) {
-    const exit = document.exitFullscreen || document.webkitExitFullscreen;
-    try { exit?.call(document); } catch {}
-    return;
-  }
-  const request = wrap.requestFullscreen || wrap.webkitRequestFullscreen;
-  try { request?.call(wrap); } catch {}
-}
-
-function setFastPlayerCaptionEnabled(enabled) {
-  fastPlayerCaptionEnabled = !!enabled;
-  if (fastPlayerCaptionEnabled) {
-    applyKoreanCaptions();
-  } else {
-    try { ytPlayer?.unloadModule?.("captions"); } catch {}
-    try { ytPlayer?.unloadModule?.("cc"); } catch {}
-  }
-  updateFastPlayerControls();
-}
-
-function updateFastPlayerControls() {
-  const wrap = document.querySelector(".player-wrap");
-  const controls = wrap?.querySelector(".fast-yt-controls");
-  if (!controls || !ytPlayer) return;
-
-  let currentTime = 0;
-  let duration = 0;
-  let volume = 100;
-  let muted = false;
-  let state = -1;
-  try { currentTime = Number(ytPlayer.getCurrentTime?.()) || 0; } catch {}
-  try { duration = Number(ytPlayer.getDuration?.()) || 0; } catch {}
-  try { volume = Number(ytPlayer.getVolume?.()); if (!Number.isFinite(volume)) volume = 100; } catch {}
-  try { muted = !!ytPlayer.isMuted?.(); } catch {}
-  try { state = Number(ytPlayer.getPlayerState?.()); } catch {}
-
-  const YTP = window.YT?.PlayerState || {};
-  const playing = state === YTP.PLAYING || state === YTP.BUFFERING;
-  const playButton = controls.querySelector(".fast-yt-play");
-  if (playButton) {
-    playButton.innerHTML = fastPlayerIcon(playing ? "pause" : "play");
-    playButton.setAttribute("aria-label", playing ? "일시정지" : "재생");
-    playButton.title = playing ? "일시정지" : "재생";
-  }
-
-  const timeLabel = controls.querySelector(".fast-yt-time");
-  if (timeLabel) timeLabel.textContent = `${formatFastPlayerTime(currentTime)} / ${formatFastPlayerTime(duration)}`;
-
-  const seek = controls.querySelector(".fast-yt-seek");
-  if (seek && seek.dataset.seeking !== "1") {
-    const pct = duration > 0 ? Math.max(0, Math.min(100, currentTime / duration * 100)) : 0;
-    seek.value = String(pct);
-    seek.style.setProperty("--fast-range-fill", `${pct}%`);
-  }
-
-  const volumeButton = controls.querySelector(".fast-yt-volume-btn");
-  if (volumeButton) {
-    volumeButton.innerHTML = fastPlayerIcon(muted || volume <= 0 ? "volume-off" : "volume");
-    volumeButton.setAttribute("aria-label", muted || volume <= 0 ? "음소거 해제" : "음소거");
-  }
-
-  const volumeRange = controls.querySelector(".fast-yt-volume-range");
-  if (volumeRange && volumeRange.dataset.adjusting !== "1") {
-    const shownVolume = muted ? 0 : Math.max(0, Math.min(100, volume));
-    volumeRange.value = String(shownVolume);
-    volumeRange.style.setProperty("--fast-range-fill", `${shownVolume}%`);
-  }
-
-  controls.querySelector(".fast-yt-cc")?.classList.toggle("is-active", fastPlayerCaptionEnabled);
-  const speed = controls.querySelector(".fast-yt-speed");
-  if (speed) speed.textContent = `${getCurrentPlaybackRate()}×`;
-}
-
-function startFastPlayerTicker() {
-  if (fastPlayerTicker) return;
-  fastPlayerTicker = window.setInterval(updateFastPlayerControls, 200);
-}
-
-function ensureFastHoverControls() {
-  const wrap = document.querySelector(".player-wrap");
-  if (!wrap || wrap.dataset.fastControlsBound === "1") return;
-  wrap.dataset.fastControlsBound = "1";
-  wrap.classList.add("fast-player-enabled");
-  wrap.classList.remove("fast-player-controls-visible");
-
-  const interaction = document.createElement("div");
-  interaction.className = "fast-yt-interaction";
-  interaction.setAttribute("role", "button");
-  interaction.setAttribute("aria-label", "영상 재생 또는 일시정지");
-  interaction.setAttribute("tabindex", "-1");
-
-  const controls = document.createElement("div");
-  controls.className = "fast-yt-controls";
-  controls.innerHTML = `
-    <div class="fast-yt-progress-row">
-      <input class="fast-yt-seek" type="range" min="0" max="100" step="0.05" value="0" aria-label="재생 위치">
-    </div>
-    <div class="fast-yt-control-row">
-      <div class="fast-yt-left">
-        <button class="fast-yt-btn fast-yt-play" type="button" aria-label="재생" title="재생">${fastPlayerIcon("play")}</button>
-        <div class="fast-yt-volume-wrap">
-          <button class="fast-yt-btn fast-yt-volume-btn" type="button" aria-label="음소거" title="음소거">${fastPlayerIcon("volume")}</button>
-          <input class="fast-yt-volume-range" type="range" min="0" max="100" step="1" value="100" aria-label="볼륨">
-        </div>
-        <span class="fast-yt-time">0:00 / 0:00</span>
-      </div>
-      <div class="fast-yt-right">
-        <button class="fast-yt-text-btn fast-yt-cc is-active" type="button" aria-label="자막" title="자막">CC</button>
-        <button class="fast-yt-text-btn fast-yt-speed" type="button" aria-label="재생 속도" title="재생 속도">1×</button>
-        <button class="fast-yt-btn fast-yt-fullscreen" type="button" aria-label="전체 화면" title="전체 화면">${fastPlayerIcon("fullscreen")}</button>
-      </div>
-    </div>`;
-
-  wrap.appendChild(interaction);
-  wrap.appendChild(controls);
-
-  let hideTimer = null;
-  let pointerInside = false;
-
-  const clearHideTimer = () => {
-    if (!hideTimer) return;
-    clearTimeout(hideTimer);
-    hideTimer = null;
-  };
-
-  const show = () => {
-    pointerInside = true;
-    clearHideTimer();
-    wrap.classList.add("fast-player-controls-visible");
-  };
-
-  const hideSoon = () => {
-    pointerInside = false;
-    clearHideTimer();
-    hideTimer = window.setTimeout(() => {
-      if (!pointerInside) wrap.classList.remove("fast-player-controls-visible");
-    }, FAST_PLAYER_HIDE_DELAY_MS);
-  };
-
-  wrap.addEventListener("pointerenter", show, { passive: true });
-  wrap.addEventListener("mouseenter", show, { passive: true });
-  wrap.addEventListener("pointerleave", hideSoon, { passive: true });
-  wrap.addEventListener("mouseleave", hideSoon, { passive: true });
-
-  // iframe 위에서 브라우저가 leave 이벤트를 늦게 주는 경우도 좌표로 한 번 더 확인한다.
-  document.addEventListener("pointermove", (event) => {
-    const rect = wrap.getBoundingClientRect();
-    const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
-    if (inside) {
-      if (!pointerInside) show();
-    } else if (pointerInside) {
-      hideSoon();
-    }
-  }, { passive: true });
-
-  interaction.addEventListener("click", (event) => {
-    event.preventDefault();
-    togglePlayerPlayPause();
-    updateFastPlayerControls();
-  });
-  interaction.addEventListener("dblclick", (event) => {
-    event.preventDefault();
-    toggleFastPlayerFullscreen();
-  });
-
-  controls.addEventListener("pointerdown", (event) => event.stopPropagation());
-  controls.addEventListener("click", (event) => event.stopPropagation());
-
-  controls.querySelector(".fast-yt-play")?.addEventListener("click", () => {
-    togglePlayerPlayPause();
-    updateFastPlayerControls();
-  });
-
-  const seek = controls.querySelector(".fast-yt-seek");
-  const seekToRangeValue = () => {
-    const duration = Number(ytPlayer?.getDuration?.()) || 0;
-    if (duration <= 0) return;
-    const pct = Math.max(0, Math.min(100, Number(seek?.value) || 0));
-    try { ytPlayer.seekTo(duration * pct / 100, true); } catch {}
-  };
-  seek?.addEventListener("pointerdown", () => { seek.dataset.seeking = "1"; });
-  seek?.addEventListener("input", () => {
-    const pct = Math.max(0, Math.min(100, Number(seek.value) || 0));
-    seek.style.setProperty("--fast-range-fill", `${pct}%`);
-    seekToRangeValue();
-  });
-  const finishSeek = () => {
-    seekToRangeValue();
-    seek.dataset.seeking = "0";
-    updateFastPlayerControls();
-  };
-  seek?.addEventListener("change", finishSeek);
-  seek?.addEventListener("pointerup", finishSeek);
-  seek?.addEventListener("pointercancel", () => { seek.dataset.seeking = "0"; });
-
-  const volumeButton = controls.querySelector(".fast-yt-volume-btn");
-  const volumeRange = controls.querySelector(".fast-yt-volume-range");
-  volumeButton?.addEventListener("click", () => {
-    try {
-      if (ytPlayer?.isMuted?.() || Number(ytPlayer?.getVolume?.()) <= 0) {
-        ytPlayer?.unMute?.();
-        if (Number(ytPlayer?.getVolume?.()) <= 0) ytPlayer?.setVolume?.(50);
-      } else {
-        ytPlayer?.mute?.();
-      }
-    } catch {}
-    updateFastPlayerControls();
-  });
-  volumeRange?.addEventListener("pointerdown", () => { volumeRange.dataset.adjusting = "1"; });
-  volumeRange?.addEventListener("input", () => {
-    const value = Math.max(0, Math.min(100, Number(volumeRange.value) || 0));
-    volumeRange.style.setProperty("--fast-range-fill", `${value}%`);
-    try {
-      ytPlayer?.unMute?.();
-      ytPlayer?.setVolume?.(value);
-    } catch {}
-  });
-  const finishVolume = () => {
-    volumeRange.dataset.adjusting = "0";
-    updateFastPlayerControls();
-  };
-  volumeRange?.addEventListener("change", finishVolume);
-  volumeRange?.addEventListener("pointerup", finishVolume);
-  volumeRange?.addEventListener("pointercancel", finishVolume);
-
-  controls.querySelector(".fast-yt-cc")?.addEventListener("click", () => {
-    setFastPlayerCaptionEnabled(!fastPlayerCaptionEnabled);
-  });
-
-  controls.querySelector(".fast-yt-speed")?.addEventListener("click", () => {
-    const rates = getAvailablePlaybackRates();
-    const current = getCurrentPlaybackRate();
-    const ordered = rates.length ? rates : FALLBACK_PLAYBACK_RATES;
-    const at = ordered.findIndex((rate) => Math.abs(rate - current) < 0.001);
-    const next = ordered[(at + 1 + ordered.length) % ordered.length] || 1;
-    setPlayerPlaybackRate(next, 1, { silent: true });
-    updateFastPlayerControls();
-  });
-
-  controls.querySelector(".fast-yt-fullscreen")?.addEventListener("click", toggleFastPlayerFullscreen);
-
-  document.addEventListener("fullscreenchange", updateFastPlayerControls);
-  document.addEventListener("webkitfullscreenchange", updateFastPlayerControls);
-  window.addEventListener("blur", () => {
-    pointerInside = false;
-    clearHideTimer();
-    wrap.classList.remove("fast-player-controls-visible");
-  });
-
-  // 터치 기기에서는 hover가 없으므로 탭했을 때 잠깐만 보여준다.
-  wrap.addEventListener("pointerup", (event) => {
-    if (event.pointerType !== "touch") return;
-    wrap.classList.add("fast-player-controls-visible");
-    clearHideTimer();
-    hideTimer = window.setTimeout(() => wrap.classList.remove("fast-player-controls-visible"), 1400);
-  }, { passive: true });
-
-  updateFastPlayerControls();
-  startFastPlayerTicker();
 }
 
 function getDraggedYoutubeUrl(e) {
@@ -1041,8 +749,6 @@ function createYouTubePlayerOnce() {
     height: "100%",
     playerVars: {
       autoplay: 1,
-      controls: 0,
-      disablekb: 1,
       rel: 0,
       playsinline: 1,
       hl: "ko",
@@ -1054,9 +760,7 @@ function createYouTubePlayerOnce() {
         apiReady = true;
         playerReady = true;
         apiLoading = false;
-        ensureFastHoverControls();
-        if (fastPlayerCaptionEnabled) applyKoreanCaptions();
-        updateFastPlayerControls();
+        applyKoreanCaptions();
         flushPlayerReadyQueue();
       },
       onStateChange: onPlayerStateChange
@@ -1127,8 +831,7 @@ function play(i, options = {}) {
 
   ensurePlayerReady(() => {
     ytPlayer.loadVideoById(songs[nextIndex].id);
-    if (fastPlayerCaptionEnabled) applyKoreanCaptions();
-    updateFastPlayerControls();
+    applyKoreanCaptions();
     setTimeout(() => setPlayerPlaybackRate(desiredPlaybackRate, 0, { silent: true }), 350);
   });
 
@@ -1192,7 +895,6 @@ function playMr(i) {
 }
 
 function onPlayerStateChange(e) {
-  updateFastPlayerControls();
   if (e.data !== 0) return; // 0 = ended
 
   if (loopInfinite) {
