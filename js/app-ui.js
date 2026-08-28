@@ -218,12 +218,78 @@
   }
 
   let pageSearchQuery = "";
+  const pageSortStorageKey = `musicPageSortMode:${S.storeKey || "combined"}`;
+  let pageSortMode = localStorage.getItem(pageSortStorageKey) || "manual";
+  const VALID_SORT_MODES = new Set(["manual", "title", "author", "added", "recent", "favorite"]);
+  if (!VALID_SORT_MODES.has(pageSortMode)) pageSortMode = "manual";
+  const pageFilters = {
+    favorite: false,
+    lyrics: false,
+    memo: false,
+    mr: false,
+    country: "all",
+    tag: ""
+  };
+
+  function hasLyricsContent(song) {
+    return ["lyrics", "lyricsOriginal", "lyricsPronunciation", "lyricsMeaning", "lyricsJa", "lyricsCn", "lyricsKr", "lyricsEn"]
+      .some((field) => String(song?.[field] || "").trim());
+  }
+
+  function songStoreKey(song) {
+    return String(song?.sourceKey || song?.storeKey || song?.collection?.key || song?.country?.key || S.storeKey || "");
+  }
+
+  function matchesPageFilters(song) {
+    if (pageFilters.favorite && !song?.favorite) return false;
+    if (pageFilters.lyrics && !hasLyricsContent(song)) return false;
+    if (pageFilters.memo && !String(song?.memo || "").trim()) return false;
+    if (pageFilters.mr && !S.safeLink(song?.mr || "")) return false;
+    if (pageFilters.country !== "all" && songStoreKey(song) !== pageFilters.country) return false;
+    const wantedTag = S.normalizeTag(pageFilters.tag || "");
+    if (wantedTag && !S.normalizeTags(song?.tags).includes(wantedTag)) return false;
+    return true;
+  }
+
+  function compareText(a, b) {
+    return String(a || "").localeCompare(String(b || ""), "ko", { numeric: true, sensitivity: "base" });
+  }
+
+  function compareSongsByCurrentSort(a, b, aIndex = 0, bIndex = 0) {
+    if (pageSortMode === "title") return compareText(a?.title, b?.title) || compareText(a?.author, b?.author) || aIndex - bIndex;
+    if (pageSortMode === "author") return compareText(a?.author, b?.author) || compareText(a?.title, b?.title) || aIndex - bIndex;
+    if (pageSortMode === "added") return Number(b?.addedAt || 0) - Number(a?.addedAt || 0) || bIndex - aIndex;
+    if (pageSortMode === "recent") return Number(b?.lastPlayedAt || 0) - Number(a?.lastPlayedAt || 0) || aIndex - bIndex;
+    if (pageSortMode === "favorite") return Number(!!b?.favorite) - Number(!!a?.favorite) || compareText(a?.title, b?.title) || aIndex - bIndex;
+    return aIndex - bIndex;
+  }
+
+  function sortEntryList(entries) {
+    if (pageSortMode === "manual") return entries;
+    return [...entries].sort((a, b) => compareSongsByCurrentSort(a.song, b.song, a.index, b.index));
+  }
 
   function pageSearchResults() {
     const songs = S.songs || [];
-    return songs
+    const matched = songs
       .map((song, index) => ({ song, index }))
-      .filter(({ song }) => S.songMatchesSearch ? S.songMatchesSearch(song, pageSearchQuery) : true);
+      .filter(({ song }) => (S.songMatchesSearch ? S.songMatchesSearch(song, pageSearchQuery) : true) && matchesPageFilters(song));
+    return sortEntryList(matched);
+  }
+
+  function hasActivePageFilters() {
+    return pageFilters.favorite || pageFilters.lyrics || pageFilters.memo || pageFilters.mr || pageFilters.country !== "all" || !!S.normalizeTag(pageFilters.tag || "");
+  }
+
+  function currentSortLabel() {
+    return {
+      manual: "직접 정렬",
+      title: "제목순",
+      author: "채널/가수순",
+      added: "최근 추가순",
+      recent: "최근 재생순",
+      favorite: "즐겨찾기 우선"
+    }[pageSortMode] || "직접 정렬";
   }
 
   function updatePageSearchSummary(matchCount = null, totalCount = null) {
@@ -231,15 +297,16 @@
     if (!summary) return;
     const total = Number.isFinite(totalCount) ? totalCount : (S.songs || []).length;
     const matched = Number.isFinite(matchCount) ? matchCount : pageSearchResults().length;
-    if (!String(pageSearchQuery || "").trim()) {
+    const searching = String(pageSearchQuery || "").trim() || hasActivePageFilters();
+    if (!searching) {
       summary.textContent = isLyricsPage()
-        ? `제목태그 / 가사를 검색할 수 있어. 전체 제목태그 파일 ${total}개`
-        : `이 페이지 안에서 제목 / 태그 / 가사를 검색할 수 있어. 전체 ${total}개`;
+        ? `제목태그 / 가사를 검색할 수 있어. 전체 제목태그 파일 ${total}개 · ${currentSortLabel()}`
+        : `이 페이지 안에서 제목 / 태그 / 가사를 검색할 수 있어. 전체 ${total}개 · ${currentSortLabel()}`;
       return;
     }
     summary.textContent = isLyricsPage()
-      ? `검색 결과 ${matched}개 파일 / 전체 ${total}개 파일`
-      : `검색 결과 ${matched}개 / 전체 ${total}개`;
+      ? `검색/필터 결과 ${matched}개 파일 / 전체 ${total}개 파일 · ${currentSortLabel()}`
+      : `검색/필터 결과 ${matched}개 / 전체 ${total}개 · ${currentSortLabel()}`;
   }
 
   function setPageSearchQuery(value) {
@@ -247,19 +314,110 @@
     showList();
   }
 
+  function setPageSortMode(value) {
+    pageSortMode = VALID_SORT_MODES.has(value) ? value : "manual";
+    localStorage.setItem(pageSortStorageKey, pageSortMode);
+    showList();
+  }
+
+  function formatResumeTime(seconds) {
+    const total = Math.max(0, Math.floor(Number(seconds) || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = total % 60;
+    return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`;
+  }
+
+  function formatRecentDate(timestamp) {
+    const ts = Number(timestamp || 0);
+    if (!ts) return "";
+    const now = new Date();
+    const date = new Date(ts);
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const days = Math.round((todayStart - dayStart) / 86400000);
+    if (days === 0) return "오늘";
+    if (days === 1) return "어제";
+    if (days > 1 && days < 7) return `${days}일 전`;
+    return `${date.getMonth() + 1}/${date.getDate()}`;
+  }
+
+  function renderRecentPlaybackPanel() {
+    const panel = document.getElementById("recentPlaybackPanel");
+    if (!panel) return;
+    const recent = typeof S.getRecentSongs === "function" ? S.getRecentSongs(30) : [];
+    if (!recent.length) {
+      panel.innerHTML = `<p class="recent-empty">아직 재생 기록이 없어.</p>`;
+      return;
+    }
+    panel.innerHTML = recent.map((song) => {
+      const collection = song.collection || song.country;
+      const href = pageSongHref(collection, song);
+      const where = `${collection?.emoji || ""} ${collection?.label || ""}`.trim();
+      const pos = Number(song.lastPosition || 0);
+      const resume = pos >= 5 ? ` · 이어보기 ${formatResumeTime(pos)}` : "";
+      return `<a class="recent-playback-item" href="${S.escapeHTML(href)}">
+        <span class="recent-playback-title">${S.escapeHTML(song.title || "제목 없음")}</span>
+        <small>${S.escapeHTML(where)} · ${S.escapeHTML(formatRecentDate(song.lastPlayedAt))}${S.escapeHTML(resume)}</small>
+      </a>`;
+    }).join("");
+  }
+
+  function toggleRecentPlaybackPanel() {
+    const panel = document.getElementById("recentPlaybackPanel");
+    const btn = document.getElementById("recentToggleBtn");
+    if (!panel) return;
+    const willShow = panel.hidden;
+    panel.hidden = !willShow;
+    btn?.classList.toggle("active", willShow);
+    if (willShow) renderRecentPlaybackPanel();
+  }
+
   function createPageSearchBox() {
     const panel = document.querySelector(".left-library-panel");
     if (!panel || document.getElementById("pageSearchBox")) return;
 
+    const isCombined = isCombinedLibraryPage();
+    const showLibraryControls = !isLyricsPage();
+    const countryOptions = (S.ALL_STORES || []).map((item) => `<option value="${S.escapeHTML(item.key)}">${S.escapeHTML(`${item.emoji || ""} ${item.label || item.key}`.trim())}</option>`).join("");
+    const knownTags = typeof S.getAllKnownTags === "function" ? S.getAllKnownTags() : [];
+
     const section = document.createElement("section");
     section.id = "pageSearchBox";
-    section.className = "add-song-section search-song-section";
-    section.setAttribute("aria-label", "현재 페이지 노래 검색");
+    section.className = "add-song-section search-song-section library-search-tools";
+    section.setAttribute("aria-label", "현재 페이지 노래 검색과 정렬");
     section.innerHTML = `
       <div class="add-song-row search-song-row">
         <input id="pageSongSearchInput" placeholder="${isLyricsPage() ? "제목태그 / 가사 검색" : "제목 / 태그 / 가사 검색"}" aria-label="현재 페이지 노래 검색" />
         <button id="pageSongSearchBtn" class="add-song-btn search-song-btn" type="button">검색</button>
       </div>
+      ${showLibraryControls ? `<div class="library-toolbar-row">
+        <label class="library-sort-label">↕️
+          <select id="pageSortSelect" aria-label="목록 정렬">
+            <option value="manual">직접 정렬</option>
+            <option value="title">제목순</option>
+            <option value="author">채널/가수순</option>
+            <option value="added">최근 추가순</option>
+            <option value="recent">최근 재생순</option>
+            <option value="favorite">즐겨찾기 우선</option>
+          </select>
+        </label>
+        <button id="recentToggleBtn" class="library-tool-btn" type="button">🕘 최근 본 30개</button>
+        <details class="library-filter-details">
+          <summary>🔍 필터</summary>
+          <div class="library-filter-panel">
+            <label><input id="filterFavorite" type="checkbox"> ⭐ 즐겨찾기만</label>
+            <label><input id="filterLyrics" type="checkbox"> 가사 있음</label>
+            <label><input id="filterMemo" type="checkbox"> 메모 있음</label>
+            <label><input id="filterMr" type="checkbox"> MR 있음</label>
+            ${isCombined ? `<label class="filter-field">나라/분류<select id="filterCountry"><option value="all">전체</option>${countryOptions}</select></label>` : ""}
+            <label class="filter-field">태그<input id="filterTag" list="pageKnownTags" placeholder="#태그"></label>
+            <datalist id="pageKnownTags">${knownTags.map((tag) => `<option value="#${S.escapeHTML(tag)}"></option>`).join("")}</datalist>
+            <button id="clearPageFilters" class="library-filter-clear" type="button">필터 초기화</button>
+          </div>
+        </details>
+      </div>
+      <div id="recentPlaybackPanel" class="recent-playback-panel" hidden></div>` : ""}
       <p id="pageSearchSummary" class="search-song-help"></p>
     `;
 
@@ -271,13 +429,44 @@
     const run = () => setPageSearchQuery(input?.value || "");
     section.querySelector("#pageSongSearchBtn")?.addEventListener("click", run);
     input?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        run();
-      }
+      if (e.key === "Enter") { e.preventDefault(); run(); }
     });
     input?.addEventListener("input", run);
+
+    const sortSelect = section.querySelector("#pageSortSelect");
+    if (sortSelect) sortSelect.value = pageSortMode;
+    sortSelect?.addEventListener("change", () => setPageSortMode(sortSelect.value));
+    section.querySelector("#recentToggleBtn")?.addEventListener("click", toggleRecentPlaybackPanel);
+
+    const bindCheck = (id, key) => section.querySelector(`#${id}`)?.addEventListener("change", (e) => {
+      pageFilters[key] = !!e.target.checked;
+      showList();
+    });
+    bindCheck("filterFavorite", "favorite");
+    bindCheck("filterLyrics", "lyrics");
+    bindCheck("filterMemo", "memo");
+    bindCheck("filterMr", "mr");
+    section.querySelector("#filterCountry")?.addEventListener("change", (e) => { pageFilters.country = e.target.value || "all"; showList(); });
+    section.querySelector("#filterTag")?.addEventListener("input", (e) => { pageFilters.tag = e.target.value || ""; showList(); });
+    section.querySelector("#clearPageFilters")?.addEventListener("click", () => {
+      Object.assign(pageFilters, { favorite: false, lyrics: false, memo: false, mr: false, country: "all", tag: "" });
+      ["filterFavorite", "filterLyrics", "filterMemo", "filterMr"].forEach((id) => { const el = section.querySelector(`#${id}`); if (el) el.checked = false; });
+      const country = section.querySelector("#filterCountry"); if (country) country.value = "all";
+      const tag = section.querySelector("#filterTag"); if (tag) tag.value = "";
+      showList();
+    });
     updatePageSearchSummary();
+  }
+
+  function toggleFavoriteAt(index) {
+    const song = S.songs?.[index];
+    if (!song) return;
+    const next = !song.favorite;
+    song.favorite = next;
+    if (typeof S.setSongFavorite === "function") S.setSongFavorite(song, next);
+    else S.save?.();
+    showList();
+    renderRecentPlaybackPanel();
   }
 
   function tagChipHTML(tag, count = null, extraClass = "") {
@@ -1304,13 +1493,15 @@
         : (hasMr ? "status-has-mr" : "status-no-mr");
       const statusLabel = hasMr ? "MR" : "없음";
       const sourceBadge = isCombinedLibraryPage() ? collectionBadgeText(s) : "";
-      const actionButtonHTML = isYoutubeCollectionPage()
+      const favoriteButtonHTML = `<button class="pl-favorite-btn${s.favorite ? " is-favorite" : ""}" type="button" title="${s.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}" aria-label="${s.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}" onclick="event.stopPropagation(); toggleFavoriteAt(${i});">${s.favorite ? "★" : "☆"}</button>`;
+      const statusButtonHTML = isYoutubeCollectionPage()
         ? `<button class="pl-mr-status pl-add-status" type="button" title="현재 목록에서 숨기고 태그 설명에 기록" onclick="event.stopPropagation(); archivePlaylistSong(${i});">추가</button>`
         : `<button class="pl-mr-status ${statusClass}" type="button"
             title="${hasMr ? "MR 링크 있음 - 누르면 큰 유튜브 창에서 MR 재생" : "MR 링크 없음"}"
             onclick="event.stopPropagation(); playMr(${i});">
             ${statusLabel}
           </button>`;
+      const actionButtonHTML = `<div class="pl-actions">${favoriteButtonHTML}${statusButtonHTML}</div>`;
 
       const duplicateCount = Number(options.duplicateCount || 0);
       const duplicateToggleHTML = options.isGroupMain && duplicateCount > 0
@@ -1320,7 +1511,9 @@
           </button>`
         : (options.isDuplicateChild ? `<span class="duplicate-child-badge">같은 노래</span>` : "");
 
-      const subText = [S.safeText(s.author || ""), sourceBadge].filter(Boolean).join(" · ");
+      const savedPosition = Number(s.lastPosition || 0);
+      const resumeText = savedPosition >= 5 ? `이어보기 ${formatResumeTime(savedPosition)}` : "";
+      const subText = [S.safeText(s.author || ""), sourceBadge, resumeText].filter(Boolean).join(" · ");
       const subHTML = `<div class="pl-sub">${S.escapeHTML(subText)}${duplicateToggleHTML}</div>`;
 
       let dragAttributes = `draggable="true" ondragstart="onDragStart(event, ${i})" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event, ${i})"`;
@@ -1336,8 +1529,13 @@
         handleHTML = `<div class="pl-handle duplicate-group-handle" title="같은 노래 묶음 전체를 드래그" onclick="event.stopPropagation();"><span></span><span></span></div>`;
       }
 
+      if (pageSortMode !== "manual" && !isLyricsPage()) {
+        dragAttributes = `draggable="false"`;
+        handleHTML = `<div class="pl-handle sort-locked-handle" title="직접 정렬에서 드래그할 수 있어"><span></span><span></span></div>`;
+      }
+
       const rowClass = `${options.isGroupMain && duplicateCount > 0 ? " duplicate-group-main" : ""}${options.isDuplicateChild ? " duplicate-child" : ""}`;
-      const displayIndex = isSongCollectionPage() ? i + 1 : order + 1;
+      const displayIndex = isSongCollectionPage() && pageSortMode === "manual" ? i + 1 : order + 1;
       const playing = i === S.current || (options.isGroupMain && groupHasCurrent && !options.expanded);
 
       return `
@@ -1368,10 +1566,15 @@ ${actionButtonHTML}
     let html = `<div class="playlist">`;
 
     if (isSongCollectionPage()) {
-      const groups = buildSongDuplicateGroups().filter((group) => {
-        if (!String(pageSearchQuery || "").trim()) return true;
-        return group.items.some(({ song }) => S.songMatchesSearch ? S.songMatchesSearch(song, pageSearchQuery) : true);
-      });
+      const matchedIndexes = new Set(filtered.map(({ index }) => index));
+      const groups = buildSongDuplicateGroups().filter((group) => group.items.some(({ index }) => matchedIndexes.has(index)));
+      if (pageSortMode !== "manual") {
+        groups.sort((a, b) => {
+          const aa = a.items.find(({ index }) => matchedIndexes.has(index)) || a.items[0];
+          const bb = b.items.find(({ index }) => matchedIndexes.has(index)) || b.items[0];
+          return compareSongsByCurrentSort(aa?.song, bb?.song, aa?.index || 0, bb?.index || 0);
+        });
+      }
 
       groups.forEach((group, groupOrder) => {
         const main = group.items[0];
@@ -2661,6 +2864,7 @@ ${actionButtonHTML}
   });
 
   window.showList = showList;
+  window.toggleFavoriteAt = toggleFavoriteAt;
   window.updateLyricsDrawer = updateLyricsDrawer;
   window.archivePlaylistSong = archivePlaylistSong;
   window.renderTagTools = renderTagTools;

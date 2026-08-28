@@ -57,6 +57,11 @@ async function addSong() {
     original: archivedRecord ? safeLink(archivedRecord.original || "") : original,
     memo: archivedRecord ? String(archivedRecord.memo || "") : "",
     tags: archivedRecord?.tags || [],
+    favorite: !!archivedRecord?.favorite,
+    addedAt: Date.now(),
+    lastPlayedAt: 0,
+    lastPosition: 0,
+    lastDuration: 0,
     aspect: meta.aspect || archivedRecord?.aspect || "",
     thumbnailWidth: meta.thumbnailWidth || archivedRecord?.thumbnailWidth || 0,
     thumbnailHeight: meta.thumbnailHeight || archivedRecord?.thumbnailHeight || 0
@@ -816,9 +821,61 @@ function ensureTopTrackNavButtons() {
   titleBar.appendChild(nav);
 }
 
+let playbackProgressTimer = null;
+
+function formatPlaybackClock(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+    : `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function showResumeToast(seconds) {
+  let toast = document.getElementById("resumePlaybackToast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "resumePlaybackToast";
+    toast.className = "resume-playback-toast";
+    toast.setAttribute("aria-live", "polite");
+    document.body.appendChild(toast);
+  }
+  toast.textContent = `이어보기 · ${formatPlaybackClock(seconds)}부터`;
+  toast.classList.add("show");
+  clearTimeout(showResumeToast._timer);
+  showResumeToast._timer = setTimeout(() => toast.classList.remove("show"), 1600);
+}
+
+function persistPlaybackProgress(options = {}) {
+  const song = songs[current];
+  if (!song || !ytPlayer || typeof ytPlayer.getCurrentTime !== "function") return;
+  try {
+    const position = Math.max(0, Number(ytPlayer.getCurrentTime()) || 0);
+    const duration = Math.max(0, Number(ytPlayer.getDuration?.()) || 0);
+    song.lastPosition = options.completed ? 0 : position;
+    song.lastDuration = duration;
+    if (options.markPlayed) song.lastPlayedAt = Date.now();
+    save();
+  } catch {}
+}
+
+function startPlaybackProgressTracking() {
+  if (playbackProgressTimer) return;
+  playbackProgressTimer = setInterval(() => {
+    try {
+      const playingState = window.YT?.PlayerState?.PLAYING ?? 1;
+      if (ytPlayer?.getPlayerState?.() === playingState) persistPlaybackProgress();
+    } catch {}
+  }, 10000);
+}
+
 function play(i, options = {}) {
   const nextIndex = Number(i);
   if (!Number.isFinite(nextIndex) || !songs[nextIndex] || !songs[nextIndex].id) return;
+
+  if (songs[current] && nextIndex !== current) persistPlaybackProgress();
 
   if (!options.fromHistory && songs[current] && nextIndex !== current) {
     playHistoryBack.push(current);
@@ -827,10 +884,21 @@ function play(i, options = {}) {
   }
 
   current = nextIndex;
-  applyPlayerFrame(songs[nextIndex]);
+  const song = songs[nextIndex];
+  const savedPosition = Math.max(0, Number(song.lastPosition || 0) || 0);
+  const savedDuration = Math.max(0, Number(song.lastDuration || 0) || 0);
+  const canResume = options.resume !== false && savedPosition >= 5 && (!savedDuration || savedPosition < savedDuration - 10);
+  song.lastPlayedAt = Date.now();
+  save();
+  applyPlayerFrame(song);
 
   ensurePlayerReady(() => {
-    ytPlayer.loadVideoById(songs[nextIndex].id);
+    if (canResume) {
+      ytPlayer.loadVideoById({ videoId: song.id, startSeconds: savedPosition });
+      showResumeToast(savedPosition);
+    } else {
+      ytPlayer.loadVideoById(song.id);
+    }
     applyKoreanCaptions();
     setTimeout(() => setPlayerPlaybackRate(desiredPlaybackRate, 0, { silent: true }), 350);
   });
@@ -895,7 +963,16 @@ function playMr(i) {
 }
 
 function onPlayerStateChange(e) {
-  if (e.data !== 0) return; // 0 = ended
+  const pausedState = window.YT?.PlayerState?.PAUSED ?? 2;
+  const endedState = window.YT?.PlayerState?.ENDED ?? 0;
+
+  if (e.data === pausedState) {
+    persistPlaybackProgress();
+    return;
+  }
+  if (e.data !== endedState) return;
+
+  persistPlaybackProgress({ completed: true });
 
   if (loopInfinite) {
     ytPlayer.playVideo();
@@ -946,7 +1023,7 @@ function onPlayerStateChange(e) {
 function playNextSequential() {
   if (songs.length === 0) return;
   const next = (current + 1) % songs.length;
-  play(next);
+  play(next, { resume: false });
 }
 
 function pickRandomIndex(excludeConsecutive = true) {
@@ -969,7 +1046,7 @@ function playRandomPickAndPlay(excludeConsecutive = true) {
   const idx = pickRandomIndex(excludeConsecutive);
   if (idx === -1) return;
   lastRandomIndex = idx;
-  play(idx);
+  play(idx, { resume: false });
 }
 
 function setActiveControl(activeId) {
@@ -1157,6 +1234,9 @@ document.addEventListener("DOMContentLoaded", () => {
     deleteSong(current);
     prunePlayHistory();
   });
+
+  startPlaybackProgressTracking();
+  window.addEventListener("pagehide", () => persistPlaybackProgress(), { once: true });
 
   showList();
   updateLyricsDrawer();

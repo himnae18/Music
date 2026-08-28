@@ -1002,6 +1002,11 @@ ${text}` : text;
       original: String(song.original || song.origin || song.originalUrl || "").trim(),
       memo: String(song.memo || ""),
       tags: cleanTags,
+      favorite: song.favorite === true || song.favorite === 1 || song.favorite === "true",
+      addedAt: Number(song.addedAt || 0) || 0,
+      lastPlayedAt: Number(song.lastPlayedAt || 0) || 0,
+      lastPosition: Math.max(0, Number(song.lastPosition || 0) || 0),
+      lastDuration: Math.max(0, Number(song.lastDuration || 0) || 0),
       aspect,
       thumbnailWidth,
       thumbnailHeight
@@ -1066,6 +1071,27 @@ ${text}` : text;
   }
 
   migrateUnifiedStores();
+
+  // 예전 데이터에는 추가 시각이 없으므로, 현재 저장 순서를 기준으로 1회만 보정한다.
+  // 이후 새로 추가되는 항목은 실제 addedAt 시각이 저장된다.
+  function ensureLibraryMetadata() {
+    const now = Date.now();
+    ALL_STORES.forEach((collection, storeOrder) => {
+      const arr = cleanSongArray(readStorage(collection.key));
+      if (!arr.length) return;
+      let changed = false;
+      const base = now - ((arr.length + 1) * 1000) - (ALL_STORES.length - storeOrder) * 10;
+      arr.forEach((song, index) => {
+        if (!Number(song.addedAt || 0)) {
+          song.addedAt = base + index * 1000;
+          changed = true;
+        }
+      });
+      if (changed) writeStorage(collection.key, arr);
+    });
+  }
+
+  ensureLibraryMetadata();
 
   let songs = cleanSongArray(readStorage(storeKey));
   let current = 0;
@@ -1311,6 +1337,11 @@ ${text}` : text;
       original: archivedRecord ? safeLink(archivedRecord.original || "") : safeLink(original),
       memo: archivedRecord ? String(archivedRecord.memo || "") : "",
       tags: finalTags,
+      favorite: !!archivedRecord?.favorite,
+      addedAt: Date.now(),
+      lastPlayedAt: 0,
+      lastPosition: 0,
+      lastDuration: 0,
       aspect: meta.aspect || archivedRecord?.aspect || "",
       thumbnailWidth: meta.thumbnailWidth || archivedRecord?.thumbnailWidth || 0,
       thumbnailHeight: meta.thumbnailHeight || archivedRecord?.thumbnailHeight || 0
@@ -1325,6 +1356,45 @@ ${text}` : text;
     }
 
     return { ok: true, storeKey: targetStore.key, store: targetStore, index, song: arr[index], updatedExisting: false, duplicateAllowed: exactDuplicates.length > 0 || duplicates.length > 0 || !!archivedRecord, archivedRecord };
+  }
+
+  function setFavoriteBySource(sourceKey, sourceIndex, value) {
+    const key = String(sourceKey || "");
+    if (!ALL_STORES.some((item) => item.key === key)) return false;
+    const arr = cleanSongArray(readStorage(key));
+    let index = Number(sourceIndex);
+    if (!Number.isInteger(index) || !arr[index]) return false;
+    arr[index].favorite = !!value;
+    writeStorage(key, arr);
+
+    if (storeKey === key && !isTagPage() && !isLyricsPage() && songs[index]) {
+      songs[index].favorite = !!value;
+    }
+    return true;
+  }
+
+  function setSongFavorite(song, value) {
+    if (!song) return false;
+    const key = song.sourceKey || song.storeKey || storeKey;
+    let index = Number(song.sourceIndex ?? song.index);
+    if (key === storeKey && !isTagPage() && !isLyricsPage()) {
+      const direct = songs.indexOf(song);
+      if (direct >= 0) index = direct;
+    }
+    if (!Number.isInteger(index)) {
+      index = findSongIndexInStore(key, song);
+    }
+    const ok = setFavoriteBySource(key, index, value);
+    if (ok) song.favorite = !!value;
+    return ok;
+  }
+
+  function getRecentSongs(limit = 30) {
+    const max = Math.max(1, Math.min(100, Number(limit) || 30));
+    return getAllSongs()
+      .filter((song) => Number(song.lastPlayedAt || 0) > 0)
+      .sort((a, b) => Number(b.lastPlayedAt || 0) - Number(a.lastPlayedAt || 0))
+      .slice(0, max);
   }
 
   function getAllSongs() {
@@ -1438,6 +1508,9 @@ ${text}` : text;
     ensureTitleTagSharedTextFromSongs,
     cleanSong,
     cleanSongArray,
+    setFavoriteBySource,
+    setSongFavorite,
+    getRecentSongs,
     getAllSongs,
     getTagCounts,
     getTagPageUrl,
@@ -1649,7 +1722,7 @@ ${text}` : text;
     box.innerHTML = `
       <button id="exportBackupBtn" class="backup-btn" type="button">💾 저장</button>
       <button id="importBackupBtn" class="backup-btn" type="button">📂 불러오기</button>
-      <p class="backup-help">저장은 JSON 파일로 다운로드되고, 불러오기는 그 파일을 다시 넣는 방식이야. 노래 페이지와 유튜브 1P~4P도 같이 저장돼.</p>
+      <p class="backup-help">저장은 JSON 파일로 다운로드되고, 불러오기는 그 파일을 다시 넣는 방식이야. 노래 페이지와 유튜브 1P~6P도 같이 저장돼.</p>
     `;
 
     const mainContent = document.getElementById("mainContent");
@@ -1701,42 +1774,76 @@ ${text}` : text;
     `).join("");
   }
 
+  const mainSearchFilters = { favorite: false, lyrics: false, memo: false, mr: false, country: "all", tag: "" };
+
+  function mainSongHasLyrics(song) {
+    return ["lyrics", "lyricsOriginal", "lyricsPronunciation", "lyricsMeaning", "lyricsJa", "lyricsCn", "lyricsKr", "lyricsEn"]
+      .some((field) => String(song?.[field] || "").trim());
+  }
+
+  function mainSongMatchesFilters(song) {
+    if (mainSearchFilters.favorite && !song?.favorite) return false;
+    if (mainSearchFilters.lyrics && !mainSongHasLyrics(song)) return false;
+    if (mainSearchFilters.memo && !String(song?.memo || "").trim()) return false;
+    if (mainSearchFilters.mr && !safeLink(song?.mr || "")) return false;
+    if (mainSearchFilters.country !== "all" && String(song?.storeKey || song?.collection?.key || "") !== mainSearchFilters.country) return false;
+    const wantedTag = normalizeTag(mainSearchFilters.tag || "");
+    if (wantedTag && !normalizeTags(song?.tags).includes(wantedTag)) return false;
+    return true;
+  }
+
+  function hasMainSearchFilters() {
+    return mainSearchFilters.favorite || mainSearchFilters.lyrics || mainSearchFilters.memo || mainSearchFilters.mr || mainSearchFilters.country !== "all" || !!normalizeTag(mainSearchFilters.tag || "");
+  }
+
+  function mainFavoriteButtonHTML(song) {
+    const key = song?.storeKey || song?.collection?.key || "";
+    const index = Number(song?.sourceIndex ?? song?.index);
+    return `<button type="button" class="main-favorite-btn${song?.favorite ? " is-favorite" : ""}" data-main-favorite-store="${escapeAttr(key)}" data-main-favorite-index="${Number.isInteger(index) ? index : -1}" title="${song?.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}">${song?.favorite ? "★" : "☆"}</button>`;
+  }
+
   function renderMainSearchResults(query) {
     const resultBox = document.getElementById("mainSearchResults");
     const summary = document.getElementById("mainSearchSummary");
     if (!resultBox || !summary) return;
 
     const text = String(query ?? "").trim();
-    if (!text) {
-      summary.textContent = "노래 제목이나 태그를 검색해줘. 예: 오버, 잔잔함";
+    if (!text && !hasMainSearchFilters()) {
+      summary.textContent = "노래 제목이나 태그를 검색하거나 필터를 선택해줘.";
       resultBox.innerHTML = "";
       resultBox.hidden = true;
       return;
     }
 
-    const results = searchSongs(text, "all");
-    const tagHTML = mainTagResultsHTML(text);
-    const tagCount = typeof S.searchTags === "function" ? S.searchTags(text).length : 0;
+    const baseResults = text ? searchSongs(text, "all") : getAllSongs();
+    const results = baseResults.filter(mainSongMatchesFilters);
+    const tagHTML = text ? mainTagResultsHTML(text) : "";
+    const tagCount = text && typeof window.AppState?.searchTags === "function" ? window.AppState.searchTags(text).length : 0;
     summary.textContent = `태그 ${tagCount}개 / 영상 ${results.length}개 찾았어.`;
     resultBox.hidden = false;
 
     if (!results.length && !tagHTML) {
-      resultBox.innerHTML = `<p class="empty-center main-search-empty">검색 결과가 없어.</p>`;
+      resultBox.innerHTML = `<p class="empty-center main-search-empty">검색/필터 결과가 없어.</p>`;
       return;
     }
 
     const songHTML = results.map((song) => {
       const badge = `${song?.collection?.emoji || ""} ${song?.collection?.label || ""}`.trim();
       const sub = [safeText(song?.author), badge].filter(Boolean).join(" · ");
+      const pos = Math.max(0, Number(song?.lastPosition || 0) || 0);
+      const resume = pos >= 5 ? ` · 이어보기 ${Math.floor(pos / 60)}:${String(Math.floor(pos % 60)).padStart(2, "0")}` : "";
       return `
-        <a class="main-search-item" href="${escapeAttr(getSongOpenHref(song))}">
-          <div class="main-search-meta">
+        <div class="main-search-item">
+          <a class="main-search-meta main-search-link" href="${escapeAttr(getSongOpenHref(song))}">
             <div class="main-search-title">${escapeHTML(song?.title || "제목 없음")}</div>
-            <div class="main-search-sub">${escapeHTML(sub)}</div>
+            <div class="main-search-sub">${escapeHTML(sub + resume)}</div>
             ${mainSearchTagsHTML(song)}
+          </a>
+          <div class="main-search-result-actions">
+            ${mainFavoriteButtonHTML(song)}
+            <a class="main-search-open" href="${escapeAttr(getSongOpenHref(song))}">열기</a>
           </div>
-          <span class="main-search-open">열기</span>
-        </a>
+        </div>
       `;
     }).join("");
     resultBox.innerHTML = `${tagHTML}${songHTML}`;
@@ -1749,16 +1856,28 @@ ${text}` : text;
     const anchor = backupTools || document.querySelector("h1");
     if (!anchor) return;
 
+    const countryOptions = (S.COUNTRY_STORES || []).map((item) => `<option value="${escapeAttr(item.key)}">${escapeHTML(`${item.emoji || ""} ${item.label || ""}`.trim())}</option>`).join("");
+    const knownTags = typeof S.getAllKnownTags === "function" ? S.getAllKnownTags() : [];
     const section = document.createElement("section");
     section.id = "mainSearchSection";
     section.className = "main-search-section";
     section.innerHTML = `
       <div class="add-song-section search-song-section search-song-section-main">
         <div class="add-song-row search-song-row">
-          <input id="mainSongSearchInput" placeholder="노래 제목 / 태그 검색" aria-label="메인 노래 검색" />
+          <input id="mainSongSearchInput" placeholder="노래 제목 / 태그 / 가사 검색" aria-label="메인 노래 검색" />
           <button id="mainSongSearchBtn" class="add-song-btn search-song-btn" type="button">검색</button>
         </div>
-        <p id="mainSearchSummary" class="search-song-help">노래 제목이나 태그를 검색해줘. 예: 오버, 잔잔함</p>
+        <div class="main-search-filter-row">
+          <label><input id="mainFilterFavorite" type="checkbox"> ⭐ 즐겨찾기만</label>
+          <label><input id="mainFilterLyrics" type="checkbox"> 가사 있음</label>
+          <label><input id="mainFilterMemo" type="checkbox"> 메모 있음</label>
+          <label><input id="mainFilterMr" type="checkbox"> MR 있음</label>
+          <label>나라 <select id="mainFilterCountry"><option value="all">전체</option>${countryOptions}</select></label>
+          <label>태그 <input id="mainFilterTag" list="mainKnownTags" placeholder="#태그"></label>
+          <datalist id="mainKnownTags">${knownTags.map((tag) => `<option value="#${escapeHTML(tag)}"></option>`).join("")}</datalist>
+          <button id="mainClearFilters" class="main-filter-clear" type="button">초기화</button>
+        </div>
+        <p id="mainSearchSummary" class="search-song-help">노래 제목이나 태그를 검색하거나 필터를 선택해줘.</p>
       </div>
       <div id="mainSearchResults" class="main-search-results" hidden></div>
     `;
@@ -1769,13 +1888,36 @@ ${text}` : text;
     const input = document.getElementById("mainSongSearchInput");
     const run = () => renderMainSearchResults(input?.value || "");
     document.getElementById("mainSongSearchBtn")?.addEventListener("click", run);
-    input?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        run();
-      }
-    });
+    input?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); run(); } });
     input?.addEventListener("input", run);
+
+    const bindCheck = (id, key) => document.getElementById(id)?.addEventListener("change", (e) => { mainSearchFilters[key] = !!e.target.checked; run(); });
+    bindCheck("mainFilterFavorite", "favorite");
+    bindCheck("mainFilterLyrics", "lyrics");
+    bindCheck("mainFilterMemo", "memo");
+    bindCheck("mainFilterMr", "mr");
+    document.getElementById("mainFilterCountry")?.addEventListener("change", (e) => { mainSearchFilters.country = e.target.value || "all"; run(); });
+    document.getElementById("mainFilterTag")?.addEventListener("input", (e) => { mainSearchFilters.tag = e.target.value || ""; run(); });
+    document.getElementById("mainClearFilters")?.addEventListener("click", () => {
+      Object.assign(mainSearchFilters, { favorite: false, lyrics: false, memo: false, mr: false, country: "all", tag: "" });
+      ["mainFilterFavorite", "mainFilterLyrics", "mainFilterMemo", "mainFilterMr"].forEach((id) => { const el = document.getElementById(id); if (el) el.checked = false; });
+      const country = document.getElementById("mainFilterCountry"); if (country) country.value = "all";
+      const tag = document.getElementById("mainFilterTag"); if (tag) tag.value = "";
+      run();
+    });
+
+    document.getElementById("mainSearchResults")?.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-main-favorite-store]");
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const key = btn.getAttribute("data-main-favorite-store") || "";
+      const index = Number(btn.getAttribute("data-main-favorite-index"));
+      const arr = S.cleanSongArray(S.readStorage(key));
+      if (!Number.isInteger(index) || !arr[index]) return;
+      S.setFavoriteBySource?.(key, index, !arr[index].favorite);
+      run();
+    });
   }
 
   document.addEventListener("DOMContentLoaded", () => {
