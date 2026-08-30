@@ -46,32 +46,8 @@
     }
   }
 
-  // 노래 데이터는 빈 문자열/기본값 필드를 빼서 저장한다.
-  // 읽을 때 cleanSong()이 기본값을 다시 채우므로 기존 기능은 그대로이고,
-  // 재생목록처럼 항목 수가 많을 때 localStorage 공간을 훨씬 덜 사용한다.
-  function compactStorageItem(item) {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
-
-    const compact = {};
-    Object.entries(item).forEach(([key, value]) => {
-      if (value === "" || value === null || value === undefined || value === false) return;
-      if (typeof value === "number" && value === 0) return;
-      if (Array.isArray(value) && value.length === 0) return;
-      compact[key] = value;
-    });
-    return compact;
-  }
-
   function writeStorage(key, value) {
-    const arr = Array.isArray(value) ? value : [];
-    const compact = arr.map(compactStorageItem);
-    try {
-      localStorage.setItem(key, JSON.stringify(compact));
-      return true;
-    } catch (error) {
-      console.error("저장 공간이 부족하거나 저장에 실패했어.", error);
-      return false;
-    }
+    localStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
   }
 
   function safeText(v) {
@@ -1299,21 +1275,8 @@ ${text}` : text;
   }
 
   function confirmExactVideoDuplicateAdd(duplicates = []) {
-    if (!Array.isArray(duplicates) || duplicates.length === 0) return true;
-    if (typeof window.confirm !== "function") return true;
-
-    const first = duplicates[0];
-    const title = safeText(first?.song?.title) || "제목 없음";
-    const places = [...new Set(duplicates.map((item) => safeText(item?.store?.label)).filter(Boolean))];
-    const placeText = places.slice(0, 3).join(", ") + (places.length > 3 ? ` 외 ${places.length - 3}곳` : "");
-    const countText = duplicates.length > 1 ? ` (${duplicates.length}개 있음)` : "";
-
-    return window.confirm(
-      `이미 추가된 똑같은 영상이 있어${countText}.\n\n` +
-      `- 기존 영상: ${title}\n` +
-      `- 위치: ${placeText || "다른 목록"}\n\n` +
-      `그래도 추가할까?`
-    );
+    // 같은 유튜브 영상은 확인창을 띄우지 않고 항상 자동 건너뛰기.
+    return !Array.isArray(duplicates) || duplicates.length === 0;
   }
 
   async function addVideoToStoreWithTags({ ytUrl, storeKey: wantedStoreKey, tags = [], mr = "", original = "", lyrics = "" } = {}) {
@@ -1324,6 +1287,12 @@ ${text}` : text;
     if (!targetStore) return { ok: false, error: "저장 위치를 찾지 못했어." };
     if (!cleanUrl || !id) return { ok: false, error: "유튜브 링크가 올바르지 않아." };
 
+    // 완전히 같은 영상은 어느 목록에 있든 확인창 없이 자동으로 건너뛴다.
+    const exactDuplicates = collectExactVideoDuplicates({ ytUrl: cleanUrl, id });
+    if (exactDuplicates.length > 0) {
+      return { ok: false, cancelled: true, duplicate: true, silent: true, duplicates: exactDuplicates, error: "이미 있는 영상이라 자동으로 건너뛰었어." };
+    }
+
     const meta = await fetchYouTubeMeta(cleanUrl);
     const archivedRecord = findRemovedVideoRecord({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
     if (archivedRecord) {
@@ -1331,15 +1300,8 @@ ${text}` : text;
       if (!allowArchived) return { ok: false, cancelled: true, duplicate: true, archived: true, record: archivedRecord, error: "이전에 추가했던 영상이라 취소했어." };
     }
 
-    const exactDuplicates = collectExactVideoDuplicates({ ytUrl: cleanUrl, id });
-    if (exactDuplicates.length > 0 && !confirmExactVideoDuplicateAdd(exactDuplicates)) {
-      return { ok: false, cancelled: true, duplicate: true, duplicates: exactDuplicates, error: "중복 추가를 취소했어." };
-    }
-
-    // 기존의 "같은 제목" 중복 확인도 유지한다. 같은 영상으로 이미 확인한 경우에는 두 번 묻지 않는다.
-    const duplicates = exactDuplicates.length > 0
-      ? []
-      : collectDuplicateSongs({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
+    // 제목만 같은 다른 영상은 기존 확인 동작을 유지한다.
+    const duplicates = collectDuplicateSongs({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
     if (duplicates.length > 0 && !confirmDuplicateAdd(duplicates)) {
       return { ok: false, cancelled: true, duplicate: true, duplicates, error: "중복 추가를 취소했어." };
     }

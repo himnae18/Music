@@ -1,266 +1,273 @@
 // js/app-player.js - 노래 추가/삭제 + 유튜브 플레이어 + 랜덤/반복 버튼
 
-const MAX_PLAYLIST_IMPORT_ITEMS = 5000;
+const PLAYLIST_IMPORT_LIMIT = 200;
 const PLAYLIST_META_CONCURRENCY = 8;
-let playlistImportBusy = false;
 
-function extractPlaylistID(value) {
-  const text = String(value || "").trim();
+function extractPlaylistID(url) {
+  const text = safeLink(url);
   if (!text) return "";
 
   try {
     const u = new URL(text);
-    const list = String(u.searchParams.get("list") || "").trim();
-    if (list) return list;
-  } catch {}
-
-  const match = text.match(/[?&]list=([^&#]+)/i);
-  if (match?.[1]) return decodeURIComponent(match[1]);
-
-  // 링크 대신 재생목록 ID만 붙여넣는 경우도 허용한다.
-  if (/^(PL|UU|LL|FL|OLAK5uy_|RD)[A-Za-z0-9_-]{8,}$/i.test(text)) return text;
-  return "";
-}
-
-function setPlaylistImportStatus(message = "", kind = "") {
-  const input = document.getElementById("yt");
-  const section = input?.closest?.(".add-song-section");
-  if (!section) return;
-
-  let status = section.querySelector("#playlistImportStatus");
-  if (!status) {
-    status = document.createElement("div");
-    status.id = "playlistImportStatus";
-    status.style.cssText = "margin-top:8px;font-size:12px;line-height:1.45;color:#666;word-break:keep-all;";
-    section.appendChild(status);
+    if (!/(^|\.)youtube\.com$/i.test(u.hostname) && !/(^|\.)youtu\.be$/i.test(u.hostname)) return "";
+    return safeText(u.searchParams.get("list"));
+  } catch {
+    const match = String(text).match(/[?&]list=([^&#\s]+)/i);
+    return match ? safeText(match[1]) : "";
   }
-  status.textContent = message;
-  status.dataset.kind = kind;
-  status.style.color = kind === "error" ? "#c23b3b" : (kind === "success" ? "#287a4a" : "#666");
 }
 
-function ensureYouTubeApiForPlaylist() {
-  return new Promise((resolve, reject) => {
-    const finish = () => {
-      if (window.YT && typeof window.YT.Player === "function") resolve();
-      else reject(new Error("유튜브 플레이어 API를 불러오지 못했어."));
-    };
+function getKnownVideoIdSet() {
+  const ids = new Set();
+  const all = typeof window.AppState?.getAllSongs === "function"
+    ? window.AppState.getAllSongs()
+    : (Array.isArray(songs) ? songs : []);
 
-    if (window.YT && typeof window.YT.Player === "function") {
-      resolve();
-      return;
-    }
-
-    ensurePlayerReady(() => finish());
-    setTimeout(() => {
-      if (!(window.YT && typeof window.YT.Player === "function")) {
-        reject(new Error("유튜브 재생목록을 읽는 데 시간이 너무 오래 걸렸어."));
-      }
-    }, 15000);
+  all.forEach((song) => {
+    const id = safeText(song?.id) || extractID(song?.ytUrl || "");
+    if (id) ids.add(id);
   });
+  return ids;
 }
 
-async function readPlaylistVideoIds(playlistId) {
-  await ensureYouTubeApiForPlaylist();
+function setAddButtonStatus(text, busy = false) {
+  const button = document.querySelector(".add-song-section .add-song-btn");
+  if (!button) return;
+  if (!button.dataset.defaultText) button.dataset.defaultText = button.textContent || "추가";
+  button.textContent = text || button.dataset.defaultText;
+  button.disabled = !!busy;
+}
 
-  const holder = document.createElement("div");
-  holder.id = `playlist-importer-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  holder.style.cssText = "position:fixed;left:-10000px;top:-10000px;width:2px;height:2px;opacity:0;pointer-events:none;";
-  document.body.appendChild(holder);
+function restoreAddButtonStatus(delay = 0) {
+  const run = () => {
+    const button = document.querySelector(".add-song-section .add-song-btn");
+    if (!button) return;
+    button.textContent = button.dataset.defaultText || "추가";
+    button.disabled = false;
+  };
+  if (delay > 0) setTimeout(run, delay);
+  else run();
+}
 
+function waitForYouTubePlayerApi() {
   return new Promise((resolve, reject) => {
-    let importer = null;
-    let settled = false;
-    let best = [];
-    let stableTicks = 0;
-    let pollTimer = 0;
-    let hardTimer = 0;
-
-    const cleanup = () => {
-      clearInterval(pollTimer);
-      clearTimeout(hardTimer);
-      try { importer?.destroy?.(); } catch {}
-      holder.remove();
-    };
-
-    const finish = (ids) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      const unique = [...new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean))];
-      if (!unique.length) reject(new Error("재생목록에서 영상을 찾지 못했어. 비공개/삭제 영상만 있거나 재생목록 접근이 제한됐을 수 있어."));
-      else resolve(unique.slice(0, MAX_PLAYLIST_IMPORT_ITEMS));
-    };
-
-    const sample = () => {
-      let ids = [];
-      try { ids = importer?.getPlaylist?.() || []; } catch {}
-      if (Array.isArray(ids) && ids.length > best.length) {
-        best = ids.slice();
-        stableTicks = 0;
-        setPlaylistImportStatus(`재생목록 읽는 중… ${best.length}개 확인`);
-      } else if (best.length > 0) {
-        stableTicks++;
-      }
-
-      // 목록 길이가 잠시 안정되면 가져온다. 큰 재생목록은 충분히 기다려 더 많이 받는다.
-      if (best.length >= MAX_PLAYLIST_IMPORT_ITEMS || (best.length > 0 && stableTicks >= 8)) finish(best);
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
     };
 
     try {
-      importer = new YT.Player(holder.id, {
-        width: "2",
-        height: "2",
-        playerVars: { autoplay: 0, controls: 0, playsinline: 1, rel: 0 },
-        events: {
-          onReady: (event) => {
-            try {
-              event.target.cuePlaylist({ listType: "playlist", list: playlistId, index: 0, startSeconds: 0 });
-            } catch (error) {
-              cleanup();
-              reject(error);
-              return;
-            }
-            pollTimer = setInterval(sample, 350);
-            setTimeout(sample, 250);
-          },
-          onStateChange: sample,
-          onError: () => {
-            if (best.length) finish(best);
-          }
-        }
-      });
+      ensurePlayerReady(finish);
     } catch (error) {
-      cleanup();
       reject(error);
       return;
     }
 
-    hardTimer = setTimeout(() => {
-      if (best.length) finish(best);
-      else {
-        cleanup();
-        reject(new Error("재생목록을 읽지 못했어."));
-      }
-    }, 20000);
+    setTimeout(() => {
+      if (!done) reject(new Error("유튜브 플레이어 API 준비 시간이 초과됐어."));
+    }, 15000);
   });
 }
 
-async function mapWithConcurrency(items, limit, worker) {
-  const results = new Array(items.length);
+async function getPlaylistVideoIds(playlistId) {
+  await waitForYouTubePlayerApi();
+
+  return new Promise((resolve, reject) => {
+    const holder = document.createElement("div");
+    holder.style.position = "fixed";
+    holder.style.left = "-99999px";
+    holder.style.top = "-99999px";
+    holder.style.width = "1px";
+    holder.style.height = "1px";
+    holder.style.opacity = "0";
+    holder.style.pointerEvents = "none";
+    holder.setAttribute("aria-hidden", "true");
+    document.body.appendChild(holder);
+
+    let player = null;
+    let finished = false;
+    let pollTimer = null;
+    let timeoutTimer = null;
+    let lastCount = -1;
+    let stableCount = 0;
+
+    const cleanup = () => {
+      clearTimeout(pollTimer);
+      clearTimeout(timeoutTimer);
+      try { player?.destroy?.(); } catch {}
+      holder.remove();
+    };
+
+    const finish = (ids, error = null) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve([...new Set((ids || []).map((id) => safeText(id)).filter(Boolean))]);
+    };
+
+    const poll = () => {
+      if (finished) return;
+      let ids = [];
+      try {
+        ids = Array.isArray(player?.getPlaylist?.()) ? player.getPlaylist() : [];
+      } catch {}
+
+      if (ids.length > 0) {
+        if (ids.length === lastCount) stableCount += 1;
+        else stableCount = 0;
+        lastCount = ids.length;
+
+        // 목록 길이가 몇 차례 연속 같으면 로딩이 끝난 것으로 본다.
+        // getPlaylist()가 200개 이상을 돌려주는 경우에도 전체를 받은 뒤 아래에서 200개만 추가한다.
+        if (stableCount >= 3) {
+          finish(ids);
+          return;
+        }
+      }
+      pollTimer = setTimeout(poll, 350);
+    };
+
+    timeoutTimer = setTimeout(() => {
+      let ids = [];
+      try { ids = Array.isArray(player?.getPlaylist?.()) ? player.getPlaylist() : []; } catch {}
+      if (ids.length) finish(ids);
+      else finish([], new Error("재생목록 영상을 불러오지 못했어. 공개 재생목록인지 확인해줘."));
+    }, 12000);
+
+    try {
+      player = new YT.Player(holder, {
+        width: "1",
+        height: "1",
+        playerVars: {
+          autoplay: 0,
+          playsinline: 1,
+          rel: 0
+        },
+        events: {
+          onReady: (event) => {
+            try {
+              event.target.cuePlaylist({
+                listType: "playlist",
+                list: playlistId,
+                index: 0,
+                startSeconds: 0
+              });
+              poll();
+            } catch (error) {
+              finish([], error);
+            }
+          },
+          onError: () => {
+            // 일부 비공개/삭제 영상 때문에 onError가 와도 목록 자체는 읽힐 수 있으므로 poll을 계속한다.
+          }
+        }
+      });
+    } catch (error) {
+      finish([], error);
+    }
+  });
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const result = new Array(items.length);
   let cursor = 0;
-  const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+  const workerCount = Math.max(1, Math.min(Number(limit) || 1, items.length || 1));
+
+  async function worker() {
     while (true) {
       const index = cursor++;
       if (index >= items.length) return;
-      try {
-        results[index] = await worker(items[index], index);
-      } catch {
-        results[index] = null;
-      }
+      result[index] = await mapper(items[index], index);
     }
-  });
-  await Promise.all(runners);
-  return results;
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return result;
 }
 
-async function addPlaylistFromInput(rawUrl, playlistId) {
-  if (playlistImportBusy) return;
-  playlistImportBusy = true;
-
-  const input = document.getElementById("yt");
-  const button = input?.parentElement?.querySelector?.(".add-song-btn");
-  if (button) button.disabled = true;
+async function importYouTubePlaylist(playlistId) {
+  setAddButtonStatus("재생목록 읽는중...", true);
 
   try {
-    setPlaylistImportStatus("재생목록을 읽는 중…");
-    const ids = await readPlaylistVideoIds(playlistId);
-    const existingIds = new Set((songs || []).map((song) => String(song?.id || extractID(song?.ytUrl) || "").trim()).filter(Boolean));
-    const newIds = ids.filter((id) => !existingIds.has(id));
-    const skipped = ids.length - newIds.length;
+    const playlistIds = await getPlaylistVideoIds(playlistId);
+    const knownIds = getKnownVideoIdSet();
+    const chosen = [];
+    const seen = new Set();
+    let duplicateSkipped = 0;
 
-    if (!newIds.length) {
-      setPlaylistImportStatus(`재생목록 ${ids.length}개가 이미 모두 들어가 있어.`, "success");
-      return;
+    for (const id of playlistIds) {
+      if (!id || seen.has(id)) {
+        if (id) duplicateSkipped += 1;
+        continue;
+      }
+      seen.add(id);
+      if (knownIds.has(id)) {
+        duplicateSkipped += 1; // 같은 영상은 창 없이 자동 건너뛰기
+        continue;
+      }
+      if (chosen.length < PLAYLIST_IMPORT_LIMIT) chosen.push(id);
     }
 
-    setPlaylistImportStatus(`영상 정보 불러오는 중… 0 / ${newIds.length}`);
-    let metaDone = 0;
-    const metas = await mapWithConcurrency(newIds, PLAYLIST_META_CONCURRENCY, async (id) => {
-      const url = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
-      const meta = await fetchYouTubeMeta(url);
-      metaDone++;
-      if (metaDone === newIds.length || metaDone % 10 === 0) {
-        setPlaylistImportStatus(`영상 정보 불러오는 중… ${metaDone} / ${newIds.length}`);
-      }
-      return { id, url, meta };
+    if (chosen.length === 0) {
+      setAddButtonStatus(playlistIds.length ? "추가할 새 영상 없음" : "영상 없음", false);
+      restoreAddButtonStatus(1800);
+      return { added: 0, skipped: duplicateSkipped, total: playlistIds.length };
+    }
+
+    setAddButtonStatus(`정보 불러오는중 0/${chosen.length}`, true);
+    let completed = 0;
+    const metaList = await mapWithConcurrency(chosen, PLAYLIST_META_CONCURRENCY, async (id) => {
+      const ytUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+      const meta = await fetchYouTubeMeta(ytUrl);
+      completed += 1;
+      setAddButtonStatus(`정보 불러오는중 ${completed}/${chosen.length}`, true);
+      return { id, ytUrl, meta };
     });
 
-    const startLength = songs.length;
-    let savedLength = startLength;
-    let added = 0;
-    let storageFull = false;
+    const now = Date.now();
+    metaList.forEach(({ id, ytUrl, meta }, order) => {
+      const archivedRecord = typeof window.AppState?.findRemovedVideoRecord === "function"
+        ? window.AppState.findRemovedVideoRecord({ ytUrl, id, title: meta.title, storeKey: window.AppState?.storeKey || "" })
+        : null;
 
-    for (let i = 0; i < metas.length; i++) {
-      const item = metas[i];
-      if (!item) continue;
-      const meta = item.meta || {};
       songs.push({
-        title: meta.title && meta.title !== "제목 없음" ? meta.title : `YouTube 영상 ${item.id}`,
-        author: meta.author || "",
-        ytUrl: item.url,
-        id: item.id,
-        lyrics: "",
-        mr: "",
+        title: archivedRecord?.title || meta.title || "제목 없음",
+        author: archivedRecord?.author || meta.author || "",
+        ytUrl,
+        id,
+        lyrics: archivedRecord ? String(archivedRecord.lyrics || "") : "",
+        mr: archivedRecord ? safeLink(archivedRecord.mr || "") : "",
         score: "",
-        original: "",
-        memo: "",
-        tags: [],
-        favorite: false,
-        addedAt: Date.now() + i,
+        original: archivedRecord ? safeLink(archivedRecord.original || "") : "",
+        memo: archivedRecord ? String(archivedRecord.memo || "") : "",
+        tags: archivedRecord?.tags || [],
+        favorite: !!archivedRecord?.favorite,
+        addedAt: now + order,
         lastPlayedAt: 0,
         lastPosition: 0,
         lastDuration: 0,
-        aspect: meta.aspect || "",
-        thumbnailWidth: meta.thumbnailWidth || 0,
-        thumbnailHeight: meta.thumbnailHeight || 0
+        aspect: meta.aspect || archivedRecord?.aspect || "",
+        thumbnailWidth: meta.thumbnailWidth || archivedRecord?.thumbnailWidth || 0,
+        thumbnailHeight: meta.thumbnailHeight || archivedRecord?.thumbnailHeight || 0
       });
-      added++;
+    });
 
-      // 큰 재생목록도 저장 한도 직전까지 최대한 넣고, 한도를 넘으면 마지막 성공 지점으로 복구한다.
-      if (added % 50 === 0 || i === metas.length - 1) {
-        const ok = window.AppState?.writeStorage?.(window.AppState.storeKey, songs);
-        if (!ok) {
-          songs.splice(savedLength);
-          storageFull = true;
-          break;
-        }
-        savedLength = songs.length;
-        setPlaylistImportStatus(`재생목록 추가 중… ${added} / ${newIds.length}`);
-      }
-    }
+    save();
+    showList();
 
-    added = songs.length - startLength;
-    if (added > 0) {
-      current = startLength;
-      save();
-      showList();
-      if (input) input.value = "";
-      play(current, { resume: false });
-    }
+    const input = document.getElementById("yt");
+    if (input) input.value = "";
 
-    const parts = [`${added}개 추가`];
-    if (skipped) parts.push(`이미 있던 영상 ${skipped}개 건너뜀`);
-    if (storageFull) parts.push("저장 공간이 찰 때까지 추가함");
-    if (ids.length >= MAX_PLAYLIST_IMPORT_ITEMS) parts.push(`한 번에 최대 ${MAX_PLAYLIST_IMPORT_ITEMS}개까지 처리`);
-    setPlaylistImportStatus(parts.join(" · "), storageFull ? "error" : "success");
+    setAddButtonStatus(`${chosen.length}개 추가됨${duplicateSkipped > 0 ? ` · 중복 ${duplicateSkipped}개 건너뜀` : ""}`, false);
+    restoreAddButtonStatus(2600);
+    return { added: chosen.length, skipped: duplicateSkipped, total: playlistIds.length };
   } catch (error) {
-    console.error(error);
-    setPlaylistImportStatus(error?.message || "재생목록 추가에 실패했어.", "error");
-    alert(error?.message || "재생목록 추가에 실패했어.");
-  } finally {
-    playlistImportBusy = false;
-    if (button) button.disabled = false;
+    restoreAddButtonStatus();
+    alert(error?.message || "재생목록을 불러오지 못했어.");
+    return { added: 0, skipped: 0, total: 0, error };
   }
 }
 
@@ -270,10 +277,11 @@ async function addSong() {
   const mr = safeLink(document.getElementById("mr")?.value);
   const score = safeLink(document.getElementById("score")?.value);
   const original = safeLink(document.getElementById("original")?.value);
-
   const playlistId = extractPlaylistID(ytUrl);
-  if (playlistId) {
-    await addPlaylistFromInput(ytUrl, playlistId);
+
+  // list=가 들어있는 주소는 영상 1개가 아니라 재생목록 가져오기로 처리한다.
+  if (ytUrl && playlistId) {
+    await importYouTubePlaylist(playlistId);
     return;
   }
 
@@ -282,6 +290,10 @@ async function addSong() {
     alert("유튜브 영상 또는 재생목록 링크가 올바르지 않아!");
     return;
   }
+
+  // 완전히 같은 영상 ID가 이미 있으면 확인창 없이 조용히 건너뛴다.
+  const exactDuplicateMatches = window.AppState?.collectExactVideoDuplicates?.({ ytUrl, id }) || [];
+  if (exactDuplicateMatches.length > 0) return;
 
   const meta = await fetchYouTubeMeta(ytUrl);
   const archivedRecord = typeof window.AppState?.findRemovedVideoRecord === "function"
@@ -294,21 +306,13 @@ async function addSong() {
     if (!allowArchived) return;
   }
 
-  const exactDuplicateMatches = window.AppState?.collectExactVideoDuplicates?.({ ytUrl, id }) || [];
-  if (exactDuplicateMatches.length > 0) {
-    const canAddExactDuplicate = typeof window.AppState?.confirmExactVideoDuplicateAdd === "function"
-      ? window.AppState.confirmExactVideoDuplicateAdd(exactDuplicateMatches)
-      : true;
-    if (!canAddExactDuplicate) return;
-  }
-
-  // 기존의 같은-제목 확인은 그대로 유지하되, 같은 영상으로 이미 한 번 물은 경우 두 번 묻지 않는다.
-  const duplicateMatches = exactDuplicateMatches.length > 0 ? [] : (window.AppState?.collectDuplicateSongs?.({
+  // 제목만 같은 다른 영상은 기존 동작을 유지한다.
+  const duplicateMatches = window.AppState?.collectDuplicateSongs?.({
     ytUrl,
     id,
     title: meta.title,
     storeKey: window.AppState?.storeKey || ""
-  }) || []);
+  }) || [];
   if (duplicateMatches.length > 0) {
     const canAddDuplicate = typeof window.AppState?.confirmDuplicateAdd === "function"
       ? window.AppState.confirmDuplicateAdd(duplicateMatches)
@@ -337,7 +341,6 @@ async function addSong() {
     thumbnailHeight: meta.thumbnailHeight || archivedRecord?.thumbnailHeight || 0
   });
 
-  // 같은 영상 묶기에서 위치가 바뀌어도 방금 추가한 항목을 현재 곡으로 유지한다.
   current = songs.length - 1;
   save();
   showList();
@@ -672,7 +675,7 @@ function bindAddSongDropTargets() {
       const types = Array.from(e.dataTransfer?.types || []);
       if (types.includes("application/x-fivep-song") || types.includes("application/x-library-song")) return;
       const url = getDraggedYoutubeUrl(e);
-      if (!url || !extractID(url)) return;
+      if (!url || (!extractID(url) && !extractPlaylistID(url))) return;
       e.preventDefault();
       e.stopPropagation();
       targets.forEach((el) => el.classList.remove("is-url-dragover"));
@@ -1290,73 +1293,22 @@ function onPlayerStateChange(e) {
   playNextSequential();
 }
 
-function isCurrentSongCollectionPage() {
-  const key = String(window.AppState?.storeKey || "");
-  return (window.AppState?.COUNTRY_STORES || []).some((item) => item.key === key);
+function playNextSequential() {
+  if (songs.length === 0) return;
+  const next = (current + 1) % songs.length;
+  play(next, { resume: false });
 }
 
-function duplicatePlaybackKey(song) {
-  if (!isCurrentSongCollectionPage()) return "";
-  const titleTag = typeof window.AppState?.getSongTitleTag === "function"
-    ? String(window.AppState.getSongTitleTag(song) || "").trim()
-    : "";
-  return titleTag ? `title-tag:${titleTag}` : "";
-}
-
-// 같은 노래 묶음은 자동재생/다음곡에서 대표 1곡만 재생하고 나머지는 한 번에 건너뛴다.
-function findAdjacentPlaybackIndex(direction = 1) {
+function pickRandomIndex(excludeConsecutive = true) {
   const n = songs.length;
   if (n === 0) return -1;
   if (n === 1) return 0;
 
-  const step = direction < 0 ? -1 : 1;
-  const currentKey = duplicatePlaybackKey(songs[current]);
-  let index = current;
-
-  for (let tries = 0; tries < n; tries++) {
-    index = (index + step + n) % n;
-    if (index === current) break;
-    if (!currentKey || duplicatePlaybackKey(songs[index]) !== currentKey) return index;
-  }
-  return current;
-}
-
-function playNextSequential() {
-  const next = findAdjacentPlaybackIndex(1);
-  if (next < 0) return;
-  play(next, { resume: false });
-}
-
-function getRandomPlaybackCandidates() {
-  const n = songs.length;
-  if (!isCurrentSongCollectionPage()) return Array.from({ length: n }, (_, index) => index);
-
-  const seenGroups = new Set();
-  const indexes = [];
-  songs.forEach((song, index) => {
-    const key = duplicatePlaybackKey(song);
-    if (!key) {
-      indexes.push(index);
-      return;
-    }
-    if (seenGroups.has(key)) return;
-    seenGroups.add(key);
-    indexes.push(index);
-  });
-  return indexes;
-}
-
-function pickRandomIndex(excludeConsecutive = true) {
-  const candidates = getRandomPlaybackCandidates();
-  const n = candidates.length;
-  if (n === 0) return -1;
-  if (n === 1) return candidates[0];
-
   let tries = 0;
-  let idx = candidates[Math.floor(Math.random() * n)];
+  let idx = Math.floor(Math.random() * n);
 
   while (excludeConsecutive && tries < 30 && (idx === current || idx === lastRandomIndex)) {
-    idx = candidates[Math.floor(Math.random() * n)];
+    idx = Math.floor(Math.random() * n);
     tries++;
   }
 
@@ -1434,7 +1386,7 @@ document.addEventListener("DOMContentLoaded", () => {
   ensureTopTrackNavButtons();
   const ytInput = document.getElementById("yt");
   if (ytInput) {
-    ytInput.placeholder = "유튜브 영상 링크";
+    ytInput.placeholder = "유튜브 영상 또는 재생목록 링크";
   }
 
   ytInput?.addEventListener("keydown", (e) => {
@@ -1575,8 +1527,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function previousSong() {
   if (!songs.length) return;
-  const prev = findAdjacentPlaybackIndex(-1);
-  if (prev < 0) return;
+  const prev = (current - 1 + songs.length) % songs.length;
   play(prev);
 }
 
@@ -1587,11 +1538,6 @@ function nextSong() {
 function randomSong() {
   playRandomPickAndPlay(true);
 }
-
-document.addEventListener("DOMContentLoaded", () => {
-  const input = document.getElementById("yt");
-  if (input) input.placeholder = "유튜브 영상 / 재생목록 링크";
-});
 
 window.goBackSong = goBackSong;
 window.previousSong = previousSong;
