@@ -1,5 +1,269 @@
 // js/app-player.js - 노래 추가/삭제 + 유튜브 플레이어 + 랜덤/반복 버튼
 
+const MAX_PLAYLIST_IMPORT_ITEMS = 5000;
+const PLAYLIST_META_CONCURRENCY = 8;
+let playlistImportBusy = false;
+
+function extractPlaylistID(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+
+  try {
+    const u = new URL(text);
+    const list = String(u.searchParams.get("list") || "").trim();
+    if (list) return list;
+  } catch {}
+
+  const match = text.match(/[?&]list=([^&#]+)/i);
+  if (match?.[1]) return decodeURIComponent(match[1]);
+
+  // 링크 대신 재생목록 ID만 붙여넣는 경우도 허용한다.
+  if (/^(PL|UU|LL|FL|OLAK5uy_|RD)[A-Za-z0-9_-]{8,}$/i.test(text)) return text;
+  return "";
+}
+
+function setPlaylistImportStatus(message = "", kind = "") {
+  const input = document.getElementById("yt");
+  const section = input?.closest?.(".add-song-section");
+  if (!section) return;
+
+  let status = section.querySelector("#playlistImportStatus");
+  if (!status) {
+    status = document.createElement("div");
+    status.id = "playlistImportStatus";
+    status.style.cssText = "margin-top:8px;font-size:12px;line-height:1.45;color:#666;word-break:keep-all;";
+    section.appendChild(status);
+  }
+  status.textContent = message;
+  status.dataset.kind = kind;
+  status.style.color = kind === "error" ? "#c23b3b" : (kind === "success" ? "#287a4a" : "#666");
+}
+
+function ensureYouTubeApiForPlaylist() {
+  return new Promise((resolve, reject) => {
+    const finish = () => {
+      if (window.YT && typeof window.YT.Player === "function") resolve();
+      else reject(new Error("유튜브 플레이어 API를 불러오지 못했어."));
+    };
+
+    if (window.YT && typeof window.YT.Player === "function") {
+      resolve();
+      return;
+    }
+
+    ensurePlayerReady(() => finish());
+    setTimeout(() => {
+      if (!(window.YT && typeof window.YT.Player === "function")) {
+        reject(new Error("유튜브 재생목록을 읽는 데 시간이 너무 오래 걸렸어."));
+      }
+    }, 15000);
+  });
+}
+
+async function readPlaylistVideoIds(playlistId) {
+  await ensureYouTubeApiForPlaylist();
+
+  const holder = document.createElement("div");
+  holder.id = `playlist-importer-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  holder.style.cssText = "position:fixed;left:-10000px;top:-10000px;width:2px;height:2px;opacity:0;pointer-events:none;";
+  document.body.appendChild(holder);
+
+  return new Promise((resolve, reject) => {
+    let importer = null;
+    let settled = false;
+    let best = [];
+    let stableTicks = 0;
+    let pollTimer = 0;
+    let hardTimer = 0;
+
+    const cleanup = () => {
+      clearInterval(pollTimer);
+      clearTimeout(hardTimer);
+      try { importer?.destroy?.(); } catch {}
+      holder.remove();
+    };
+
+    const finish = (ids) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const unique = [...new Set((ids || []).map((id) => String(id || "").trim()).filter(Boolean))];
+      if (!unique.length) reject(new Error("재생목록에서 영상을 찾지 못했어. 비공개/삭제 영상만 있거나 재생목록 접근이 제한됐을 수 있어."));
+      else resolve(unique.slice(0, MAX_PLAYLIST_IMPORT_ITEMS));
+    };
+
+    const sample = () => {
+      let ids = [];
+      try { ids = importer?.getPlaylist?.() || []; } catch {}
+      if (Array.isArray(ids) && ids.length > best.length) {
+        best = ids.slice();
+        stableTicks = 0;
+        setPlaylistImportStatus(`재생목록 읽는 중… ${best.length}개 확인`);
+      } else if (best.length > 0) {
+        stableTicks++;
+      }
+
+      // 목록 길이가 잠시 안정되면 가져온다. 큰 재생목록은 충분히 기다려 더 많이 받는다.
+      if (best.length >= MAX_PLAYLIST_IMPORT_ITEMS || (best.length > 0 && stableTicks >= 8)) finish(best);
+    };
+
+    try {
+      importer = new YT.Player(holder.id, {
+        width: "2",
+        height: "2",
+        playerVars: { autoplay: 0, controls: 0, playsinline: 1, rel: 0 },
+        events: {
+          onReady: (event) => {
+            try {
+              event.target.cuePlaylist({ listType: "playlist", list: playlistId, index: 0, startSeconds: 0 });
+            } catch (error) {
+              cleanup();
+              reject(error);
+              return;
+            }
+            pollTimer = setInterval(sample, 350);
+            setTimeout(sample, 250);
+          },
+          onStateChange: sample,
+          onError: () => {
+            if (best.length) finish(best);
+          }
+        }
+      });
+    } catch (error) {
+      cleanup();
+      reject(error);
+      return;
+    }
+
+    hardTimer = setTimeout(() => {
+      if (best.length) finish(best);
+      else {
+        cleanup();
+        reject(new Error("재생목록을 읽지 못했어."));
+      }
+    }, 20000);
+  });
+}
+
+async function mapWithConcurrency(items, limit, worker) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      try {
+        results[index] = await worker(items[index], index);
+      } catch {
+        results[index] = null;
+      }
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+async function addPlaylistFromInput(rawUrl, playlistId) {
+  if (playlistImportBusy) return;
+  playlistImportBusy = true;
+
+  const input = document.getElementById("yt");
+  const button = input?.parentElement?.querySelector?.(".add-song-btn");
+  if (button) button.disabled = true;
+
+  try {
+    setPlaylistImportStatus("재생목록을 읽는 중…");
+    const ids = await readPlaylistVideoIds(playlistId);
+    const existingIds = new Set((songs || []).map((song) => String(song?.id || extractID(song?.ytUrl) || "").trim()).filter(Boolean));
+    const newIds = ids.filter((id) => !existingIds.has(id));
+    const skipped = ids.length - newIds.length;
+
+    if (!newIds.length) {
+      setPlaylistImportStatus(`재생목록 ${ids.length}개가 이미 모두 들어가 있어.`, "success");
+      return;
+    }
+
+    setPlaylistImportStatus(`영상 정보 불러오는 중… 0 / ${newIds.length}`);
+    let metaDone = 0;
+    const metas = await mapWithConcurrency(newIds, PLAYLIST_META_CONCURRENCY, async (id) => {
+      const url = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+      const meta = await fetchYouTubeMeta(url);
+      metaDone++;
+      if (metaDone === newIds.length || metaDone % 10 === 0) {
+        setPlaylistImportStatus(`영상 정보 불러오는 중… ${metaDone} / ${newIds.length}`);
+      }
+      return { id, url, meta };
+    });
+
+    const startLength = songs.length;
+    let savedLength = startLength;
+    let added = 0;
+    let storageFull = false;
+
+    for (let i = 0; i < metas.length; i++) {
+      const item = metas[i];
+      if (!item) continue;
+      const meta = item.meta || {};
+      songs.push({
+        title: meta.title && meta.title !== "제목 없음" ? meta.title : `YouTube 영상 ${item.id}`,
+        author: meta.author || "",
+        ytUrl: item.url,
+        id: item.id,
+        lyrics: "",
+        mr: "",
+        score: "",
+        original: "",
+        memo: "",
+        tags: [],
+        favorite: false,
+        addedAt: Date.now() + i,
+        lastPlayedAt: 0,
+        lastPosition: 0,
+        lastDuration: 0,
+        aspect: meta.aspect || "",
+        thumbnailWidth: meta.thumbnailWidth || 0,
+        thumbnailHeight: meta.thumbnailHeight || 0
+      });
+      added++;
+
+      // 큰 재생목록도 저장 한도 직전까지 최대한 넣고, 한도를 넘으면 마지막 성공 지점으로 복구한다.
+      if (added % 50 === 0 || i === metas.length - 1) {
+        const ok = window.AppState?.writeStorage?.(window.AppState.storeKey, songs);
+        if (!ok) {
+          songs.splice(savedLength);
+          storageFull = true;
+          break;
+        }
+        savedLength = songs.length;
+        setPlaylistImportStatus(`재생목록 추가 중… ${added} / ${newIds.length}`);
+      }
+    }
+
+    added = songs.length - startLength;
+    if (added > 0) {
+      current = startLength;
+      save();
+      showList();
+      if (input) input.value = "";
+      play(current, { resume: false });
+    }
+
+    const parts = [`${added}개 추가`];
+    if (skipped) parts.push(`이미 있던 영상 ${skipped}개 건너뜀`);
+    if (storageFull) parts.push("저장 공간이 찰 때까지 추가함");
+    if (ids.length >= MAX_PLAYLIST_IMPORT_ITEMS) parts.push(`한 번에 최대 ${MAX_PLAYLIST_IMPORT_ITEMS}개까지 처리`);
+    setPlaylistImportStatus(parts.join(" · "), storageFull ? "error" : "success");
+  } catch (error) {
+    console.error(error);
+    setPlaylistImportStatus(error?.message || "재생목록 추가에 실패했어.", "error");
+    alert(error?.message || "재생목록 추가에 실패했어.");
+  } finally {
+    playlistImportBusy = false;
+    if (button) button.disabled = false;
+  }
+}
+
 async function addSong() {
   const ytUrl = safeLink(document.getElementById("yt")?.value);
   const lyrics = safeText(document.getElementById("lyrics")?.value);
@@ -7,9 +271,15 @@ async function addSong() {
   const score = safeLink(document.getElementById("score")?.value);
   const original = safeLink(document.getElementById("original")?.value);
 
+  const playlistId = extractPlaylistID(ytUrl);
+  if (playlistId) {
+    await addPlaylistFromInput(ytUrl, playlistId);
+    return;
+  }
+
   const id = extractID(ytUrl);
   if (!ytUrl || !id) {
-    alert("유튜브 영상 링크가 올바르지 않아!");
+    alert("유튜브 영상 또는 재생목록 링크가 올바르지 않아!");
     return;
   }
 
@@ -1020,22 +1290,73 @@ function onPlayerStateChange(e) {
   playNextSequential();
 }
 
-function playNextSequential() {
-  if (songs.length === 0) return;
-  const next = (current + 1) % songs.length;
-  play(next, { resume: false });
+function isCurrentSongCollectionPage() {
+  const key = String(window.AppState?.storeKey || "");
+  return (window.AppState?.COUNTRY_STORES || []).some((item) => item.key === key);
 }
 
-function pickRandomIndex(excludeConsecutive = true) {
+function duplicatePlaybackKey(song) {
+  if (!isCurrentSongCollectionPage()) return "";
+  const titleTag = typeof window.AppState?.getSongTitleTag === "function"
+    ? String(window.AppState.getSongTitleTag(song) || "").trim()
+    : "";
+  return titleTag ? `title-tag:${titleTag}` : "";
+}
+
+// 같은 노래 묶음은 자동재생/다음곡에서 대표 1곡만 재생하고 나머지는 한 번에 건너뛴다.
+function findAdjacentPlaybackIndex(direction = 1) {
   const n = songs.length;
   if (n === 0) return -1;
   if (n === 1) return 0;
 
+  const step = direction < 0 ? -1 : 1;
+  const currentKey = duplicatePlaybackKey(songs[current]);
+  let index = current;
+
+  for (let tries = 0; tries < n; tries++) {
+    index = (index + step + n) % n;
+    if (index === current) break;
+    if (!currentKey || duplicatePlaybackKey(songs[index]) !== currentKey) return index;
+  }
+  return current;
+}
+
+function playNextSequential() {
+  const next = findAdjacentPlaybackIndex(1);
+  if (next < 0) return;
+  play(next, { resume: false });
+}
+
+function getRandomPlaybackCandidates() {
+  const n = songs.length;
+  if (!isCurrentSongCollectionPage()) return Array.from({ length: n }, (_, index) => index);
+
+  const seenGroups = new Set();
+  const indexes = [];
+  songs.forEach((song, index) => {
+    const key = duplicatePlaybackKey(song);
+    if (!key) {
+      indexes.push(index);
+      return;
+    }
+    if (seenGroups.has(key)) return;
+    seenGroups.add(key);
+    indexes.push(index);
+  });
+  return indexes;
+}
+
+function pickRandomIndex(excludeConsecutive = true) {
+  const candidates = getRandomPlaybackCandidates();
+  const n = candidates.length;
+  if (n === 0) return -1;
+  if (n === 1) return candidates[0];
+
   let tries = 0;
-  let idx = Math.floor(Math.random() * n);
+  let idx = candidates[Math.floor(Math.random() * n)];
 
   while (excludeConsecutive && tries < 30 && (idx === current || idx === lastRandomIndex)) {
-    idx = Math.floor(Math.random() * n);
+    idx = candidates[Math.floor(Math.random() * n)];
     tries++;
   }
 
@@ -1254,7 +1575,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
 function previousSong() {
   if (!songs.length) return;
-  const prev = (current - 1 + songs.length) % songs.length;
+  const prev = findAdjacentPlaybackIndex(-1);
+  if (prev < 0) return;
   play(prev);
 }
 
@@ -1265,6 +1587,11 @@ function nextSong() {
 function randomSong() {
   playRandomPickAndPlay(true);
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  const input = document.getElementById("yt");
+  if (input) input.placeholder = "유튜브 영상 / 재생목록 링크";
+});
 
 window.goBackSong = goBackSong;
 window.previousSong = previousSong;

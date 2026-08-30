@@ -46,8 +46,32 @@
     }
   }
 
+  // 노래 데이터는 빈 문자열/기본값 필드를 빼서 저장한다.
+  // 읽을 때 cleanSong()이 기본값을 다시 채우므로 기존 기능은 그대로이고,
+  // 재생목록처럼 항목 수가 많을 때 localStorage 공간을 훨씬 덜 사용한다.
+  function compactStorageItem(item) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+
+    const compact = {};
+    Object.entries(item).forEach(([key, value]) => {
+      if (value === "" || value === null || value === undefined || value === false) return;
+      if (typeof value === "number" && value === 0) return;
+      if (Array.isArray(value) && value.length === 0) return;
+      compact[key] = value;
+    });
+    return compact;
+  }
+
   function writeStorage(key, value) {
-    localStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
+    const arr = Array.isArray(value) ? value : [];
+    const compact = arr.map(compactStorageItem);
+    try {
+      localStorage.setItem(key, JSON.stringify(compact));
+      return true;
+    } catch (error) {
+      console.error("저장 공간이 부족하거나 저장에 실패했어.", error);
+      return false;
+    }
   }
 
   function safeText(v) {
