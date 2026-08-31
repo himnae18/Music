@@ -597,6 +597,35 @@ async function addSong() {
 function deleteSong(index) {
   if (!songs[index]) return;
 
+  // 사용자 재생목록은 원본과 완전히 분리되어 있다.
+  // 여기서 삭제해도 일본곡/태그/카테고리에는 아무 변화가 없다.
+  if (window.AppState?.isPlaylistPage?.()) {
+    if (!confirm("이 재생목록에서 이 영상만 삭제할까?\n원래 일본곡에는 영향이 없어.")) return;
+
+    const wasCurrent = index === current;
+    songs.splice(index, 1);
+    if (index < current) current--;
+    if (current >= songs.length) current = Math.max(0, songs.length - 1);
+    window.AppState.save?.();
+
+    if (songs.length === 0) {
+      try { ytPlayer?.stopVideo?.(); } catch {}
+      current = 0;
+      showList();
+      updateLyricsDrawer();
+      updateControlLabels();
+      if (typeof renderTagTools === "function") renderTagTools();
+      return;
+    }
+
+    showList();
+    updateLyricsDrawer();
+    updateControlLabels();
+    if (typeof renderTagTools === "function") renderTagTools();
+    if (wasCurrent) play(current);
+    return;
+  }
+
   if (window.AppState?.isTagPage?.()) {
     const tag = window.AppState.getCurrentTagParam?.() || "";
     if (!tag) return;

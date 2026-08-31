@@ -30,12 +30,18 @@
     return S.normalizeTag(new URLSearchParams(location.search).get("tag") || "");
   }
 
+  function playlistParam() {
+    return S.normalizeTag(new URLSearchParams(location.search).get("playlist") || "");
+  }
+
   function isTagPlayerPage() {
     return document.body?.dataset?.page === "tag";
   }
 
   function tagPageUrl(tag) {
-    return `tag.html?tag=${encodeURIComponent(tag)}`;
+    const clean = S.normalizeTag(tag);
+    const param = S.isPlaylistTag?.(clean) ? "playlist" : "tag";
+    return `tag.html?${param}=${encodeURIComponent(clean)}`;
   }
 
   function readTitleTags() {
@@ -190,7 +196,8 @@
     renderTagIndex();
 
     const selected = tagParam();
-    if (selected && typeof window.showList === "function") {
+    const selectedPlaylist = playlistParam();
+    if ((selected || selectedPlaylist) && typeof window.showList === "function") {
       if (focusResult?.ok) {
         const targetId = focusResult.song?.id || S.extractID(focusResult.song?.ytUrl || "");
         const targetUrl = S.safeLink(focusResult.song?.ytUrl);
@@ -524,6 +531,11 @@
         if (typeof S.renameTagEverywhere === "function") {
           S.renameTagEverywhere(tag, clean);
           if (document.body?.dataset?.page === "tag") {
+            const currentPlaylist = S.getCurrentPlaylistParam?.() || "";
+            if (currentPlaylist === tag) {
+              location.href = `tag.html?playlist=${encodeURIComponent(clean)}`;
+              return;
+            }
             const currentTag = S.getCurrentTagParam?.() || "";
             if (currentTag === tag) {
               location.href = `tag.html?tag=${encodeURIComponent(clean)}`;
@@ -920,6 +932,108 @@
     bindYoutubeDropToAddArea(document.querySelector(".tag-player-add-video"), input, run);
   }
 
+  function bindPlaylistVideoAdd(selected) {
+    const input = document.getElementById("tagPlayerAddUrl");
+    const extraInput = document.getElementById("tagPlayerAddExtraTags");
+    const btn = document.getElementById("tagPlayerAddBtn");
+
+    const run = async () => {
+      const ytUrl = S.safeLink(input?.value);
+      const extraTags = S.normalizeTags(extraInput?.value || "");
+      if (!ytUrl) {
+        alert("유튜브 링크를 넣어줘.");
+        return;
+      }
+
+      const oldText = btn?.textContent;
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "추가중...";
+      }
+
+      try {
+        const result = await S.addVideoToCustomPlaylist?.({
+          ytUrl,
+          playlist: selected,
+          tags: extraTags
+        });
+        if (!result?.ok) {
+          alert(result?.error || "영상을 추가하지 못했어.");
+          return;
+        }
+        if (input) input.value = "";
+        if (extraInput) extraInput.value = "";
+        refreshTagPageAfterChange(result);
+      } finally {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = oldText || "추가";
+        }
+      }
+    };
+
+    btn?.addEventListener("click", run);
+    input?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      run();
+    });
+    extraInput?.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" || e.isComposing) return;
+      e.preventDefault();
+      run();
+    });
+    attachAutocomplete(extraInput);
+    bindYoutubeDropToAddArea(document.querySelector(".tag-player-add-video"), input, run);
+  }
+
+  function showPlaylistPlayer(root, selected, playlistSongs) {
+    const mainContent = document.getElementById("mainContent");
+    const indexTitle = document.getElementById("tagIndexTitle") || document.querySelector("h1");
+    const lyricsBtn = document.getElementById("lyricsBtn");
+    const title = document.getElementById("tagPlayerTitle") || mainContent?.querySelector("h1");
+    const description = document.getElementById("tagPlayerDescription");
+    const leftTitle = document.getElementById("tagPlaylistTitle");
+    const playlistHead = document.querySelector(".tag-playlist-head");
+
+    if (root) {
+      root.hidden = true;
+      root.innerHTML = "";
+    }
+    if (indexTitle) indexTitle.hidden = true;
+    if (mainContent) mainContent.hidden = false;
+    if (lyricsBtn) lyricsBtn.hidden = false;
+
+    S.registerPlaylistTag?.(selected);
+    document.title = `${selected} 재생목록`;
+    if (title) title.textContent = selected;
+    if (description) description.textContent = `총 ${playlistSongs.length}개가 있어. 이 목록의 추가/수정/삭제는 원래 일본곡 데이터에 영향을 주지 않아.`;
+    if (leftTitle) leftTitle.textContent = `${selected} 재생목록`;
+
+    if (playlistHead) {
+      playlistHead.innerHTML = `
+        <h2 id="tagPlaylistTitle">${S.escapeHTML(selected)} 재생목록</h2>
+        <p class="tag-page-help">별도 저장되는 재생목록이야. 일본곡에 #${S.escapeHTML(selected)} 재생목록 태그를 붙이면 이쪽으로 자동 복사되지만, 여기서 추가·수정·삭제한 내용은 일본곡으로 돌아가지 않아.</p>
+        <div class="tag-player-add-video">
+          <div class="tag-player-add-head">
+            <strong>영상 추가</strong>
+            <span>이 재생목록에만 추가 · 원래 일본곡/태그/카테고리 변경 없음</span>
+          </div>
+          <div class="tag-player-add-row playlist-only-add-row">
+            <input id="tagPlayerAddUrl" placeholder="유튜브 링크" />
+            <button id="tagPlayerAddBtn" type="button">추가</button>
+          </div>
+          <input id="tagPlayerAddExtraTags" class="tag-player-extra-tags" placeholder="이 재생목록 안에서만 쓸 태그 (선택)" />
+        </div>
+      `;
+      bindPlaylistVideoAdd(selected);
+    }
+
+    if (typeof S.setSongsRaw === "function") S.setSongsRaw(playlistSongs);
+    else S.songs = playlistSongs;
+    if (!S.songs[S.current]) S.current = 0;
+  }
+
   function showTagPlayer(root, selected, taggedSongs) {
     const mainContent = document.getElementById("mainContent");
     const indexTitle = document.getElementById("tagIndexTitle") || document.querySelector("h1");
@@ -973,11 +1087,25 @@
     const root = document.getElementById("tagPageRoot");
     if (!root && !isTagPlayerPage()) return;
 
+    const selectedPlaylist = playlistParam();
     const selected = tagParam();
     const counts = S.getTagCounts("all");
 
+    if (selectedPlaylist) {
+      S.registerPlaylistTag?.(selectedPlaylist);
+      const playlistSongs = S.readCustomPlaylistSongs?.(selectedPlaylist) || [];
+      showPlaylistPlayer(root, selectedPlaylist, playlistSongs);
+      return;
+    }
+
     if (!selected) {
       showTagIndex(root, counts);
+      return;
+    }
+
+    // 재생목록으로 등록된 태그는 원본 태그 페이지가 아니라 별도 재생목록 페이지로 연다.
+    if (S.isPlaylistTag?.(selected)) {
+      location.replace(`tag.html?playlist=${encodeURIComponent(selected)}`);
       return;
     }
 

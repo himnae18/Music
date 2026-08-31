@@ -25,6 +25,7 @@
   const TITLE_FIXED_TAGS_KEY = "musicTitleFixedTags";
   const TAG_KINDS_KEY = "musicTagKinds";
   const PLAYLIST_TAGS_KEY = "musicPlaylistTags";
+  const CUSTOM_PLAYLISTS_KEY = "musicCustomPlaylistsV1";
   const TAG_SHARED_DESCRIPTION_KEY = "musicTagSharedDescriptions";
   const REMOVED_VIDEO_ARCHIVE_KEY = "musicRemovedVideoArchive";
   const TITLE_SHARED_TEXT_FIELDS = ["lyrics", "lyricsOriginal", "lyricsPronunciation", "lyricsMeaning", "memo", "original"];
@@ -418,7 +419,10 @@ ${text}` : text;
     if (titleTags.includes(oldClean)) writeTitleTags(addTags(titleTags.filter((item) => item !== oldClean), [newClean]));
 
     const playlistTags = readPlaylistTags();
-    if (playlistTags.includes(oldClean)) writePlaylistTags(addTags(playlistTags.filter((item) => item !== oldClean), [newClean]));
+    if (playlistTags.includes(oldClean)) {
+      writePlaylistTags(addTags(playlistTags.filter((item) => item !== oldClean), [newClean]));
+      renameCustomPlaylist(oldClean, newClean);
+    }
 
     const tagKinds = readTagKinds();
     if (tagKinds[oldClean]) {
@@ -782,15 +786,95 @@ ${text}` : text;
     }
   }
 
+  function readCustomPlaylists() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(CUSTOM_PLAYLISTS_KEY) || "{}");
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+      const result = {};
+      Object.entries(raw).forEach(([name, items]) => {
+        const clean = normalizeTag(name);
+        if (!clean) return;
+        result[clean] = cleanSongArray(Array.isArray(items) ? items : []);
+      });
+      return result;
+    } catch {
+      return {};
+    }
+  }
+
+  function writeCustomPlaylists(value) {
+    const input = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const cleanData = {};
+    Object.entries(input).forEach(([name, items]) => {
+      const clean = normalizeTag(name);
+      if (!clean) return;
+      cleanData[clean] = cleanSongArray(Array.isArray(items) ? items : []);
+    });
+    localStorage.setItem(CUSTOM_PLAYLISTS_KEY, JSON.stringify(cleanData));
+  }
+
+  function ensureCustomPlaylist(name) {
+    const clean = normalizeTag(name);
+    if (!clean) return false;
+    const data = readCustomPlaylists();
+    if (!Array.isArray(data[clean])) {
+      data[clean] = [];
+      writeCustomPlaylists(data);
+    }
+    return true;
+  }
+
+  function readCustomPlaylistSongs(name) {
+    const clean = normalizeTag(name);
+    if (!clean) return [];
+    const data = readCustomPlaylists();
+    return cleanSongArray(data[clean] || []);
+  }
+
+  function writeCustomPlaylistSongs(name, items) {
+    const clean = normalizeTag(name);
+    if (!clean) return false;
+    const data = readCustomPlaylists();
+    data[clean] = cleanSongArray(Array.isArray(items) ? items : []);
+    writeCustomPlaylists(data);
+    if (!readPlaylistTags().includes(clean)) {
+      localStorage.setItem(PLAYLIST_TAGS_KEY, JSON.stringify(addTags(readPlaylistTags(), [clean])));
+    }
+    return true;
+  }
+
   function writePlaylistTags(tags) {
-    localStorage.setItem(PLAYLIST_TAGS_KEY, JSON.stringify(normalizeTags(tags)));
+    const cleanTags = normalizeTags(tags);
+    localStorage.setItem(PLAYLIST_TAGS_KEY, JSON.stringify(cleanTags));
+    const data = readCustomPlaylists();
+    let changed = false;
+    cleanTags.forEach((tag) => {
+      if (!Array.isArray(data[tag])) {
+        data[tag] = [];
+        changed = true;
+      }
+    });
+    if (changed) writeCustomPlaylists(data);
   }
 
   function registerPlaylistTag(tag) {
     const clean = normalizeTag(tag);
     if (!clean) return false;
     writePlaylistTags(addTags(readPlaylistTags(), [clean]));
+    ensureCustomPlaylist(clean);
     setTagKind(clean, "playlist");
+
+    // 목록을 나중에 만든 경우에도, 이미 일본곡에 같은 재생목록 태그가 붙어 있으면 즉시 복사한다.
+    const japanSongs = cleanSongArray(readStorage("jaSongs"));
+    japanSongs.forEach((song) => {
+      if (!normalizeTags(song.tags).includes(clean)) return;
+      const items = readCustomPlaylistSongs(clean);
+      if (items.some((item) => sameVideo(item, song))) return;
+      const copy = cleanSong(song);
+      copy.addedAt = Date.now();
+      items.push(copy);
+      writeCustomPlaylistSongs(clean, items);
+    });
     return true;
   }
 
@@ -798,6 +882,11 @@ ${text}` : text;
     const clean = normalizeTag(tag);
     if (!clean) return false;
     writePlaylistTags(readPlaylistTags().filter((item) => item !== clean));
+    const playlists = readCustomPlaylists();
+    if (Object.prototype.hasOwnProperty.call(playlists, clean)) {
+      delete playlists[clean];
+      writeCustomPlaylists(playlists);
+    }
     const data = readTagKinds();
     if (data[clean] === "playlist") {
       delete data[clean];
@@ -809,6 +898,137 @@ ${text}` : text;
   function isPlaylistTag(tag) {
     const clean = normalizeTag(tag);
     return !!clean && readPlaylistTags().includes(clean);
+  }
+
+  function sameVideo(a, b) {
+    const aUrl = safeLink(a?.ytUrl || a?.sourceUrl || "");
+    const bUrl = safeLink(b?.ytUrl || b?.sourceUrl || "");
+    const aId = safeText(a?.id || a?.sourceId) || extractID(aUrl);
+    const bId = safeText(b?.id || b?.sourceId) || extractID(bUrl);
+    return !!((aId && bId && aId === bId) || (aUrl && bUrl && aUrl === bUrl));
+  }
+
+  function findOriginalSongForPlaylist(songRef = {}) {
+    const preferredKey = String(songRef?.sourceStoreKey || songRef?.sourceKey || songRef?.storeKey || "");
+    const preferredIndex = Number(songRef?.sourceIndex ?? songRef?.index);
+    const order = [];
+    const preferred = ALL_STORES.find((item) => item.key === preferredKey);
+    if (preferred) order.push(preferred);
+    ALL_STORES.forEach((item) => {
+      if (!order.some((store) => store.key === item.key)) order.push(item);
+    });
+
+    for (const collection of order) {
+      const arr = cleanSongArray(readStorage(collection.key));
+      if (collection.key === preferredKey && Number.isInteger(preferredIndex) && arr[preferredIndex] && sameVideo(arr[preferredIndex], songRef)) {
+        return arr[preferredIndex];
+      }
+      const found = arr.find((item) => sameVideo(item, songRef));
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function addSongCopyToPlaylist(songRef = {}, playlist = "") {
+    const name = normalizeTag(playlist);
+    if (!name) return { ok: false, error: "재생목록 이름이 비어 있어." };
+    registerPlaylistTag(name);
+
+    const sourceSong = findOriginalSongForPlaylist(songRef) || cleanSong(songRef);
+    if (!sourceSong || (!sourceSong.id && !sourceSong.ytUrl)) {
+      return { ok: false, error: "목록에 넣을 영상을 찾지 못했어." };
+    }
+
+    const items = readCustomPlaylistSongs(name);
+    const existingIndex = items.findIndex((item) => sameVideo(item, sourceSong));
+    if (existingIndex >= 0) {
+      return { ok: true, alreadyIncluded: true, playlist: name, index: existingIndex, song: items[existingIndex] };
+    }
+
+    const copy = cleanSong(sourceSong);
+    copy.addedAt = Date.now();
+    items.push(copy);
+    writeCustomPlaylistSongs(name, items);
+    return { ok: true, alreadyIncluded: false, playlist: name, index: items.length - 1, song: copy };
+  }
+
+  async function addVideoToCustomPlaylist({ ytUrl = "", playlist = "", tags = [] } = {}) {
+    const name = normalizeTag(playlist);
+    const cleanUrl = safeLink(ytUrl);
+    const id = extractID(cleanUrl);
+    if (!name) return { ok: false, error: "재생목록 이름이 비어 있어." };
+    if (!cleanUrl || !id) return { ok: false, error: "유튜브 링크가 올바르지 않아." };
+
+    registerPlaylistTag(name);
+    const items = readCustomPlaylistSongs(name);
+    const probe = { ytUrl: cleanUrl, id };
+    const existingIndex = items.findIndex((item) => sameVideo(item, probe));
+    if (existingIndex >= 0) {
+      return { ok: true, alreadyIncluded: true, playlist: name, index: existingIndex, song: items[existingIndex] };
+    }
+
+    const meta = await fetchYouTubeMeta(cleanUrl);
+    const song = cleanSong({
+      title: meta.title || "제목 없음",
+      author: meta.author || "",
+      ytUrl: cleanUrl,
+      id,
+      lyrics: "",
+      mr: "",
+      score: "",
+      original: "",
+      memo: "",
+      tags: normalizeTags(tags),
+      favorite: false,
+      addedAt: Date.now(),
+      lastPlayedAt: 0,
+      lastPosition: 0,
+      lastDuration: 0,
+      aspect: meta.aspect || "",
+      thumbnailWidth: meta.thumbnailWidth || 0,
+      thumbnailHeight: meta.thumbnailHeight || 0
+    });
+    items.push(song);
+    writeCustomPlaylistSongs(name, items);
+    return { ok: true, alreadyIncluded: false, playlist: name, index: items.length - 1, song };
+  }
+
+  function syncJapanSongToPlaylists(song) {
+    if (!song) return;
+    const tags = new Set(normalizeTags(song.tags));
+    readPlaylistTags().forEach((playlist) => {
+      if (!tags.has(playlist)) return;
+      const items = readCustomPlaylistSongs(playlist);
+      const existingIndex = items.findIndex((item) => sameVideo(item, song));
+      if (existingIndex >= 0) return;
+      const copy = cleanSong(song);
+      copy.addedAt = Date.now();
+      items.push(copy);
+      writeCustomPlaylistSongs(playlist, items);
+    });
+  }
+
+  function syncJapanStoreToPlaylists(items) {
+    cleanSongArray(items).forEach((song) => syncJapanSongToPlaylists(song));
+  }
+
+  function renameCustomPlaylist(oldName, newName) {
+    const oldClean = normalizeTag(oldName);
+    const newClean = normalizeTag(newName);
+    if (!oldClean || !newClean || oldClean === newClean) return false;
+    const data = readCustomPlaylists();
+    const oldItems = cleanSongArray(data[oldClean] || []);
+    const newItems = cleanSongArray(data[newClean] || []);
+    if (oldItems.length || Object.prototype.hasOwnProperty.call(data, oldClean)) {
+      const merged = [...newItems];
+      oldItems.forEach((song) => {
+        if (!merged.some((item) => sameVideo(item, song))) merged.push(song);
+      });
+      data[newClean] = merged;
+      delete data[oldClean];
+      writeCustomPlaylists(data);
+    }
+    return true;
   }
 
   function titleHasSharedText(tag) {
@@ -1101,12 +1321,20 @@ ${text}` : text;
     return document.body?.dataset?.page === "tag";
   }
 
+  function isPlaylistPage() {
+    return isTagPage() && !!getCurrentPlaylistParam();
+  }
+
   function isLyricsPage() {
     return document.body?.dataset?.page === "lyrics";
   }
 
   function getCurrentTagParam() {
     return normalizeTag(new URLSearchParams(location.search).get("tag") || "");
+  }
+
+  function getCurrentPlaylistParam() {
+    return normalizeTag(new URLSearchParams(location.search).get("playlist") || "");
   }
 
   function setSongsRaw(value) {
@@ -1144,6 +1372,7 @@ ${text}` : text;
 
     arr[idx] = cleanSong(song);
     writeStorage(sourceKey, arr);
+    if (sourceKey === "jaSongs") syncJapanSongToPlaylists(arr[idx]);
     song.sourceIndex = idx;
     song.index = idx;
     song.sourceId = song.id || extractID(song.ytUrl);
@@ -1152,10 +1381,14 @@ ${text}` : text;
   }
 
   function save() {
-    if (isTagPage() || isLyricsPage()) {
+    if (isPlaylistPage()) {
+      const playlist = getCurrentPlaylistParam();
+      if (playlist) writeCustomPlaylistSongs(playlist, songs);
+    } else if (isTagPage() || isLyricsPage()) {
       songs.forEach((song) => saveSongToSource(song));
     } else if (storeKey !== "main") {
       writeStorage(storeKey, songs);
+      if (storeKey === "jaSongs") syncJapanStoreToPlaylists(songs);
     }
     if (typeof updateDrawerCounts === "function") updateDrawerCounts();
     if (typeof renderTagTools === "function") renderTagTools();
@@ -1335,6 +1568,7 @@ ${text}` : text;
     const index = arr.length - 1;
 
     writeStorage(targetStore.key, arr);
+    if (targetStore.key === "jaSongs") syncJapanSongToPlaylists(arr[index]);
 
     if (storeKey === targetStore.key) {
       songs = cleanSongArray(readStorage(targetStore.key));
@@ -1345,74 +1579,9 @@ ${text}` : text;
   }
 
   function addPlaylistTagToExistingVideo(songRef = {}, tag = "") {
-    const cleanTag = normalizeTag(tag);
-    if (!cleanTag) return { ok: false, error: "재생목록 이름이 비어 있어." };
-
-    // 재생목록 이름과 재생목록 태그는 항상 같은 값으로 유지한다.
-    registerPlaylistTag(cleanTag);
-
-    const wantedId = safeText(songRef?.id || songRef?.sourceId) || extractID(songRef?.ytUrl || songRef?.sourceUrl || "");
-    const wantedUrl = safeLink(songRef?.ytUrl || songRef?.sourceUrl || "");
-    const preferredKey = String(songRef?.sourceStoreKey || songRef?.sourceKey || songRef?.storeKey || "");
-    const preferredIndex = Number(songRef?.sourceIndex ?? songRef?.index);
-
-    const storeOrder = [];
-    const preferredStore = ALL_STORES.find((item) => item.key === preferredKey);
-    if (preferredStore) storeOrder.push(preferredStore);
-    ALL_STORES.forEach((item) => {
-      if (!storeOrder.some((store) => store.key === item.key)) storeOrder.push(item);
-    });
-
-    for (const collection of storeOrder) {
-      const arr = cleanSongArray(readStorage(collection.key));
-      let index = -1;
-
-      if (collection.key === preferredKey && Number.isInteger(preferredIndex) && arr[preferredIndex]) {
-        const candidate = arr[preferredIndex];
-        const candidateId = safeText(candidate.id) || extractID(candidate.ytUrl);
-        const candidateUrl = safeLink(candidate.ytUrl);
-        const matches = (wantedId && candidateId === wantedId) || (wantedUrl && candidateUrl === wantedUrl);
-        if (matches) index = preferredIndex;
-      }
-
-      if (index < 0) {
-        index = arr.findIndex((item) => {
-          const itemId = safeText(item.id) || extractID(item.ytUrl);
-          const itemUrl = safeLink(item.ytUrl);
-          return (wantedId && itemId === wantedId) || (wantedUrl && itemUrl === wantedUrl);
-        });
-      }
-
-      if (index < 0 || !arr[index]) continue;
-
-      const before = normalizeTags(arr[index].tags);
-      const alreadyIncluded = before.includes(cleanTag);
-      arr[index].tags = addTags(before, [cleanTag]);
-      writeStorage(collection.key, arr);
-
-      // 현재 열어 둔 화면에도 즉시 반영해서 새로고침 없이 태그 표시가 맞게 보이도록 한다.
-      try {
-        if (Array.isArray(songs)) {
-          songs.forEach((song) => {
-            const songId = safeText(song?.id || song?.sourceId) || extractID(song?.ytUrl || song?.sourceUrl || "");
-            const songUrl = safeLink(song?.ytUrl || song?.sourceUrl || "");
-            const sameVideo = (wantedId && songId === wantedId) || (wantedUrl && songUrl === wantedUrl);
-            if (sameVideo) song.tags = addTags(song.tags, [cleanTag]);
-          });
-        }
-      } catch {}
-
-      return {
-        ok: true,
-        alreadyIncluded,
-        tag: cleanTag,
-        storeKey: collection.key,
-        index,
-        song: arr[index]
-      };
-    }
-
-    return { ok: false, error: "목록에 넣을 원본 영상을 찾지 못했어." };
+    // 이전 버전 호환용 이름만 남긴다.
+    // 이제는 원본 영상의 태그를 수정하지 않고 재생목록 저장소에 복사만 한다.
+    return addSongCopyToPlaylist(songRef, tag);
   }
 
   function setFavoriteBySource(sourceKey, sourceIndex, value) {
@@ -1432,6 +1601,11 @@ ${text}` : text;
 
   function setSongFavorite(song, value) {
     if (!song) return false;
+    if (isPlaylistPage()) {
+      song.favorite = !!value;
+      save();
+      return true;
+    }
     const key = song.sourceKey || song.storeKey || storeKey;
     let index = Number(song.sourceIndex ?? song.index);
     if (key === storeKey && !isTagPage() && !isLyricsPage()) {
@@ -1480,8 +1654,10 @@ ${text}` : text;
   }
 
   function getTagPageUrl(tag, basePrefix = "") {
+    const clean = normalizeTag(tag);
     const prefix = basePrefix || (location.pathname.includes("/japan/") || location.pathname.includes("/china/") || location.pathname.includes("/korea/") || location.pathname.includes("/english/") || location.pathname.includes("/youtube/") ? "../" : "");
-    return `${prefix}tag.html?tag=${encodeURIComponent(tag)}`;
+    const param = isPlaylistTag(clean) ? "playlist" : "tag";
+    return `${prefix}tag.html?${param}=${encodeURIComponent(clean)}`;
   }
 
   window.AppState = {
@@ -1533,6 +1709,13 @@ ${text}` : text;
     registerPlaylistTag,
     unregisterPlaylistTag,
     isPlaylistTag,
+    readCustomPlaylists,
+    writeCustomPlaylists,
+    readCustomPlaylistSongs,
+    writeCustomPlaylistSongs,
+    addSongCopyToPlaylist,
+    addVideoToCustomPlaylist,
+    syncJapanSongToPlaylists,
     titleHasSharedText,
     getAllKnownTags,
     searchTags,
@@ -1573,8 +1756,10 @@ ${text}` : text;
     getTagCounts,
     getTagPageUrl,
     isTagPage,
+    isPlaylistPage,
     isLyricsPage,
     getCurrentTagParam,
+    getCurrentPlaylistParam,
     setSongsRaw,
     saveSongToSource,
     findSongIndexInStore
@@ -1625,13 +1810,14 @@ ${text}` : text;
 
     return {
       app: "my-music-library",
-      version: 6,
+      version: 7,
       exportedAt: new Date().toISOString(),
       titleTags: typeof S.readTitleTags === "function" ? S.readTitleTags() : [],
       titleSharedLyrics: typeof S.readTitleSharedText === "function" ? S.readTitleSharedText() : {},
       titleFixedTags: typeof S.readTitleFixedTags === "function" ? S.readTitleFixedTags() : {},
       tagKinds: typeof S.readTagKinds === "function" ? S.readTagKinds() : {},
       playlistTags: typeof S.readPlaylistTags === "function" ? S.readPlaylistTags() : [],
+      customPlaylists: typeof S.readCustomPlaylists === "function" ? S.readCustomPlaylists() : {},
       stores
     };
   }
@@ -1750,6 +1936,9 @@ ${text}` : text;
           }
           if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "playlistTags") && typeof S.writePlaylistTags === "function") {
             S.writePlaylistTags(data.playlistTags);
+          }
+          if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "customPlaylists") && typeof S.writeCustomPlaylists === "function") {
+            S.writeCustomPlaylists(data.customPlaylists);
           }
           if (data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "tagSharedDescriptions") && typeof S.writeTagSharedDescriptions === "function") {
             S.writeTagSharedDescriptions(data.tagSharedDescriptions);

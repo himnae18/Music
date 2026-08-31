@@ -20,7 +20,7 @@
   }
 
   function playlistTagUrl(tag) {
-    return `${prefix()}tag.html?tag=${encodeURIComponent(tag)}`;
+    return `${prefix()}tag.html?playlist=${encodeURIComponent(tag)}`;
   }
 
   function getPlaylistTags() {
@@ -37,7 +37,7 @@
     return tags.map((tag) => `
       <a class="drawer-menu-link drawer-playlist-link"
          href="${playlistTagUrl(tag)}"
-         data-playlist-drop-tag="${escapeHTML(tag)}"
+         data-playlist-drop-name="${escapeHTML(tag)}"
          title="#${escapeHTML(tag)} 재생목록">
         <span>${escapeHTML(tag)}</span><span>›</span>
       </a>
@@ -116,7 +116,7 @@
   }
 
   function bindPlaylistDropTargets(root = document) {
-    root.querySelectorAll?.('[data-playlist-drop-tag]').forEach((link) => {
+    root.querySelectorAll?.('[data-playlist-drop-name]').forEach((link) => {
       if (link.dataset.playlistDropBound === '1') return;
       link.dataset.playlistDropBound = '1';
 
@@ -140,9 +140,9 @@
         e.stopPropagation();
         link.classList.remove('is-playlist-dragover');
 
-        const tag = link.getAttribute('data-playlist-drop-tag') || '';
+        const tag = link.getAttribute('data-playlist-drop-name') || '';
         const S = state();
-        const result = S?.addPlaylistTagToExistingVideo?.(payload, tag);
+        const result = S?.addSongCopyToPlaylist?.(payload, tag);
         if (!result?.ok) {
           link.classList.add('is-playlist-drop-error');
           setTimeout(() => link.classList.remove('is-playlist-drop-error'), 700);
@@ -152,9 +152,7 @@
         link.classList.add('is-playlist-drop-success');
         setTimeout(() => link.classList.remove('is-playlist-drop-success'), 700);
 
-        // 현재 화면의 태그/목록도 바로 갱신한다.
-        try { window.renderTagTools?.(); } catch {}
-        try { window.showList?.(); } catch {}
+        // 재생목록은 별도 저장소이므로 원본 페이지는 수정하지 않는다.
         try { window.renderTagIndex?.(); } catch {}
       });
     });
@@ -240,7 +238,7 @@
         </div>
         <div id="drawerPlaylistCreateBox" class="drawer-playlist-create-box" hidden>
           <input id="drawerPlaylistNameInput" type="text" maxlength="50" autocomplete="off" placeholder="재생목록 이름" />
-          <p class="drawer-playlist-create-help">이 이름이 재생목록 태그로도 자동 등록돼.</p>
+          <p class="drawer-playlist-create-help">이 이름으로 별도 재생목록이 저장되고, 일본곡에서는 같은 이름의 재생목록 태그로 자동 추가할 수 있어.</p>
           <div class="drawer-playlist-create-actions">
             <button id="drawerPlaylistCreateCancel" type="button">취소</button>
             <button id="drawerPlaylistCreateSave" type="button">추가</button>

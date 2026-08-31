@@ -4630,3 +4630,11 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 .drawer-playlist-create-message.is-error{
   color:#b85050;
 }
+
+/* 사용자 재생목록: 원본과 분리된 개별 영상 추가 줄 */
+.tag-player-add-row.playlist-only-add-row{
+  grid-template-columns:minmax(180px, 1fr) auto;
+}
+@media (max-width:860px){
+  .tag-player-add-row.playlist-only-add-row{ grid-template-columns:1fr; }
+}
