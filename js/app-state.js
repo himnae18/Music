@@ -1344,6 +1344,77 @@ ${text}` : text;
     return { ok: true, storeKey: targetStore.key, store: targetStore, index, song: arr[index], updatedExisting: false, duplicateAllowed: exactDuplicates.length > 0 || duplicates.length > 0 || !!archivedRecord, archivedRecord };
   }
 
+  function addPlaylistTagToExistingVideo(songRef = {}, tag = "") {
+    const cleanTag = normalizeTag(tag);
+    if (!cleanTag) return { ok: false, error: "재생목록 이름이 비어 있어." };
+
+    // 재생목록 이름과 재생목록 태그는 항상 같은 값으로 유지한다.
+    registerPlaylistTag(cleanTag);
+
+    const wantedId = safeText(songRef?.id || songRef?.sourceId) || extractID(songRef?.ytUrl || songRef?.sourceUrl || "");
+    const wantedUrl = safeLink(songRef?.ytUrl || songRef?.sourceUrl || "");
+    const preferredKey = String(songRef?.sourceStoreKey || songRef?.sourceKey || songRef?.storeKey || "");
+    const preferredIndex = Number(songRef?.sourceIndex ?? songRef?.index);
+
+    const storeOrder = [];
+    const preferredStore = ALL_STORES.find((item) => item.key === preferredKey);
+    if (preferredStore) storeOrder.push(preferredStore);
+    ALL_STORES.forEach((item) => {
+      if (!storeOrder.some((store) => store.key === item.key)) storeOrder.push(item);
+    });
+
+    for (const collection of storeOrder) {
+      const arr = cleanSongArray(readStorage(collection.key));
+      let index = -1;
+
+      if (collection.key === preferredKey && Number.isInteger(preferredIndex) && arr[preferredIndex]) {
+        const candidate = arr[preferredIndex];
+        const candidateId = safeText(candidate.id) || extractID(candidate.ytUrl);
+        const candidateUrl = safeLink(candidate.ytUrl);
+        const matches = (wantedId && candidateId === wantedId) || (wantedUrl && candidateUrl === wantedUrl);
+        if (matches) index = preferredIndex;
+      }
+
+      if (index < 0) {
+        index = arr.findIndex((item) => {
+          const itemId = safeText(item.id) || extractID(item.ytUrl);
+          const itemUrl = safeLink(item.ytUrl);
+          return (wantedId && itemId === wantedId) || (wantedUrl && itemUrl === wantedUrl);
+        });
+      }
+
+      if (index < 0 || !arr[index]) continue;
+
+      const before = normalizeTags(arr[index].tags);
+      const alreadyIncluded = before.includes(cleanTag);
+      arr[index].tags = addTags(before, [cleanTag]);
+      writeStorage(collection.key, arr);
+
+      // 현재 열어 둔 화면에도 즉시 반영해서 새로고침 없이 태그 표시가 맞게 보이도록 한다.
+      try {
+        if (Array.isArray(songs)) {
+          songs.forEach((song) => {
+            const songId = safeText(song?.id || song?.sourceId) || extractID(song?.ytUrl || song?.sourceUrl || "");
+            const songUrl = safeLink(song?.ytUrl || song?.sourceUrl || "");
+            const sameVideo = (wantedId && songId === wantedId) || (wantedUrl && songUrl === wantedUrl);
+            if (sameVideo) song.tags = addTags(song.tags, [cleanTag]);
+          });
+        }
+      } catch {}
+
+      return {
+        ok: true,
+        alreadyIncluded,
+        tag: cleanTag,
+        storeKey: collection.key,
+        index,
+        song: arr[index]
+      };
+    }
+
+    return { ok: false, error: "목록에 넣을 원본 영상을 찾지 못했어." };
+  }
+
   function setFavoriteBySource(sourceKey, sourceIndex, value) {
     const key = String(sourceKey || "");
     if (!ALL_STORES.some((item) => item.key === key)) return false;
@@ -1473,6 +1544,7 @@ ${text}` : text;
     applyTitleFixedTagsToTags,
     applyTitleFixedTagsToStores,
     addVideoToStoreWithTags,
+    addPlaylistTagToExistingVideo,
     readTitleSharedText,
     writeTitleSharedText,
     readTagSharedDescriptions,

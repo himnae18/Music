@@ -4492,3 +4492,141 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   .playlist-duplicate-btn{ flex:1 1 auto; }
   .playlist-duplicate-btn.is-download{ width:100%; margin-right:0; }
 }
+
+/* =========================
+   사용자 재생목록 - 왼쪽 드로어
+   재생목록 이름 = 재생목록 태그
+========================= */
+.drawer-playlist-divider{
+  margin-bottom:14px !important;
+}
+.drawer-custom-playlist-block{
+  margin-bottom:8px;
+}
+.drawer-playlist-category{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) 48px;
+  gap:8px;
+  align-items:stretch;
+  margin-bottom:10px;
+}
+.drawer-category-playlist{
+  margin:0 !important;
+  background:#e99ab1 !important;
+  color:#fff !important;
+}
+.drawer-category-playlist:hover{
+  background:#df849f !important;
+}
+.drawer-playlist-add-btn{
+  width:48px;
+  min-width:48px;
+  height:44px;
+  margin:0;
+  padding:0;
+  border:0;
+  border-radius:14px;
+  background:#e99ab1;
+  color:#fff;
+  font-size:28px;
+  font-weight:500;
+  line-height:1;
+  cursor:pointer;
+  box-shadow:none;
+}
+.drawer-playlist-add-btn:hover{
+  background:#df849f;
+}
+.drawer-playlist-empty{
+  margin:4px 2px 10px;
+  padding:11px 12px;
+  border:1px dashed #e2e2e2;
+  border-radius:13px;
+  color:#999;
+  font-size:12px;
+  text-align:center;
+  background:#fcfcfc;
+}
+.drawer-playlist-link{
+  transition:background .14s ease, border-color .14s ease, box-shadow .14s ease, transform .14s ease;
+}
+.drawer-playlist-link.is-playlist-dragover{
+  border-color:#e98ca8 !important;
+  background:#fff1f5 !important;
+  box-shadow:0 0 0 3px rgba(233,140,168,.14) !important;
+  transform:translateX(2px);
+}
+.drawer-playlist-link.is-playlist-drop-success{
+  border-color:#e98ca8 !important;
+  background:#fde7ee !important;
+}
+.drawer-playlist-link.is-playlist-drop-error{
+  border-color:#d36b6b !important;
+  background:#fff0f0 !important;
+}
+.drawer-playlist-create-box{
+  margin:2px 0 12px;
+  padding:12px;
+  border:1px solid #eeeeee;
+  border-radius:14px;
+  background:#fafafa;
+}
+.drawer-playlist-create-box[hidden]{
+  display:none !important;
+}
+.drawer-playlist-create-box input{
+  width:100%;
+  height:42px;
+  margin:0;
+  padding:0 12px;
+  border:1px solid #dedede;
+  border-radius:11px;
+  background:#fff;
+  color:#222;
+  font:inherit;
+  outline:none;
+}
+.drawer-playlist-create-box input:focus{
+  border-color:#e98ca8;
+  box-shadow:0 0 0 3px rgba(233,140,168,.12);
+}
+.drawer-playlist-create-help{
+  margin:7px 2px 9px;
+  color:#888;
+  font-size:11px;
+  line-height:1.4;
+}
+.drawer-playlist-create-actions{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:7px;
+}
+.drawer-playlist-create-actions button{
+  min-height:36px;
+  margin:0;
+  border:0;
+  border-radius:10px;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:800;
+}
+#drawerPlaylistCreateCancel{
+  background:#e9e9e9;
+  color:#555;
+}
+#drawerPlaylistCreateSave{
+  background:#e98ca8;
+  color:#fff;
+}
+.drawer-playlist-create-message{
+  min-height:0;
+  margin-top:6px;
+  color:#777;
+  font-size:11px;
+}
+.drawer-playlist-create-message:empty{
+  display:none;
+}
+.drawer-playlist-create-message.is-error{
+  color:#b85050;
+}
