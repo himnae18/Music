@@ -4325,3 +4325,170 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   .main-search-result-actions{ flex-direction:column; }
   .main-search-filter-row{ align-items:stretch; }
 }
+
+/* =========================
+   YouTube 재생목록 일괄 추가 (rew 방식 이식)
+========================= */
+.playlist-import-status{
+  margin:10px 2px 0;
+  padding:9px 11px;
+  border-radius:10px;
+  background:#f1f6ff;
+  color:#315a8a;
+  font-size:13px;
+  font-weight:800;
+  line-height:1.45;
+  text-align:left;
+}
+.playlist-import-status[data-state="done"]{
+  background:#eef9f0;
+  color:#26723a;
+}
+.playlist-import-status[data-state="error"]{
+  background:#fff0f0;
+  color:#b12a2a;
+}
+.playlist-import-status[data-state="warning"]{
+  background:#fff7e8;
+  color:#8b5a00;
+}
+.playlist-import-status[hidden]{ display:none !important; }
+.playlist-import-loader{
+  position:fixed !important;
+  left:-10000px !important;
+  top:-10000px !important;
+  width:2px !important;
+  height:2px !important;
+  overflow:hidden !important;
+  opacity:.01 !important;
+  pointer-events:none !important;
+}
+.add-song-btn:disabled,
+.add-song-row input:disabled{
+  opacity:.6;
+  cursor:wait;
+}
+
+/* 재생목록 중복 확인 */
+.playlist-duplicate-overlay{
+  position:fixed;
+  inset:0;
+  z-index:100000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:22px;
+  background:rgba(10,12,16,.58);
+  backdrop-filter:blur(4px);
+}
+.playlist-duplicate-dialog{
+  width:min(620px, 94vw);
+  max-height:min(720px, 88vh);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  border:1px solid rgba(0,0,0,.12);
+  border-radius:18px;
+  background:#fff;
+  box-shadow:0 24px 70px rgba(0,0,0,.28);
+  color:#20232a;
+}
+.playlist-duplicate-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding:20px 22px 14px;
+  border-bottom:1px solid #eceff3;
+}
+.playlist-duplicate-head h3{
+  margin:0;
+  font-size:20px;
+  line-height:1.3;
+}
+.playlist-duplicate-head p{
+  margin:6px 0 0;
+  color:#737985;
+  font-size:13px;
+  line-height:1.5;
+}
+.playlist-duplicate-close{
+  flex:0 0 auto;
+  width:34px;
+  height:34px;
+  border:0;
+  border-radius:10px;
+  background:#f2f3f5;
+  color:#555b66;
+  font-size:24px;
+  line-height:1;
+  cursor:pointer;
+}
+.playlist-duplicate-list-wrap{
+  min-height:120px;
+  max-height:420px;
+  overflow:auto;
+  padding:10px 22px;
+}
+.playlist-duplicate-list{
+  margin:0;
+  padding:0;
+  list-style:none;
+}
+.playlist-duplicate-list li{
+  padding:11px 12px;
+  border-bottom:1px solid #f0f1f3;
+  font-size:14px;
+  line-height:1.45;
+  word-break:break-word;
+}
+.playlist-duplicate-list li:last-child{ border-bottom:0; }
+.playlist-duplicate-list li.is-current{
+  border-radius:9px;
+  background:#fff2f3;
+  color:#8f2432;
+  font-weight:800;
+}
+.playlist-duplicate-progress{
+  padding:0 22px 12px;
+  color:#7a808b;
+  font-size:12px;
+  font-weight:700;
+}
+.playlist-duplicate-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:9px;
+  padding:15px 22px 20px;
+  border-top:1px solid #eceff3;
+  background:#fafbfc;
+}
+.playlist-duplicate-btn{
+  min-height:38px;
+  padding:0 14px;
+  border:1px solid #d9dde3;
+  border-radius:10px;
+  background:#fff;
+  color:#353a44;
+  font:inherit;
+  font-size:13px;
+  font-weight:800;
+  cursor:pointer;
+}
+.playlist-duplicate-btn:hover{ background:#f4f5f7; }
+.playlist-duplicate-btn.is-primary{
+  border-color:#9f2638;
+  background:#a92b3d;
+  color:#fff;
+}
+.playlist-duplicate-btn.is-primary:hover{ background:#922234; }
+.playlist-duplicate-btn.is-download{
+  margin-right:auto;
+}
+@media (max-width:640px){
+  .playlist-duplicate-overlay{ padding:12px; }
+  .playlist-duplicate-dialog{ max-height:92vh; }
+  .playlist-duplicate-actions{ flex-wrap:wrap; }
+  .playlist-duplicate-btn{ flex:1 1 auto; }
+  .playlist-duplicate-btn.is-download{ width:100%; margin-right:0; }
+}
