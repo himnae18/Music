@@ -2598,15 +2598,6 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
 .playlist-tag-cloud{
   justify-content:flex-start;
 }
-.tag-index-chip.has-title-shared{
-  border-color:#ff5fa8 !important;
-  background:#fff0f7 !important;
-  color:#bd145d;
-}
-.tag-index-chip.has-title-shared .tag-title-badge{
-  background:#ff5fa8;
-  color:#fff;
-}
 .tag-kind-badge,
 .tag-playlist-badge{
   display:inline-flex;
@@ -2766,8 +2757,6 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
 .tag-index-chip.is-playlist-tag{ border-color:#f0d36a; background:#fff9df; color:#806300; }
 .tag-index-chip.has-title-shared{ border-color:#ff5fa8 !important; background:#fff0f7 !important; color:#bd145d; }
 .tag-index-chip.has-title-shared:hover{ border-color:#ff4f9f !important; background:#ffe7f2 !important; }
-.tag-kind-badge,
-.tag-playlist-badge{ display:none !important; }
 
 
 
@@ -4637,4 +4626,81 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 }
 @media (max-width:860px){
   .tag-player-add-row.playlist-only-add-row{ grid-template-columns:1fr; }
+}
+
+/* =========================
+   목록 빠른 이동 바
+   - 현재 영상 클릭 이동
+   - 왼쪽 영상 드래그 이동
+========================= */
+.library-move-toolbar{
+  width:min(1040px, 94%);
+  margin:8px auto 12px;
+  padding:9px 12px;
+  border:1px solid #e5e7eb;
+  border-radius:15px;
+  background:#fff;
+  box-shadow:0 4px 14px rgba(0,0,0,0.035);
+}
+.library-move-buttons{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  flex-wrap:wrap;
+}
+.library-move-btn{
+  min-width:70px;
+  height:38px;
+  padding:0 15px;
+  border:1px solid #e0e0e0;
+  border-radius:12px;
+  background:#f8f8f9;
+  color:#222;
+  font:inherit;
+  font-weight:900;
+  cursor:pointer;
+  transition:transform .12s ease, background .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+.library-move-btn:hover{
+  background:#fff;
+  border-color:var(--main);
+  box-shadow:0 3px 10px rgba(0,0,0,.07);
+}
+.library-move-btn:active{ transform:translateY(1px); }
+.library-move-btn.is-current-store{
+  background:#f1f1f1;
+  color:#aaa;
+  border-color:#e7e7e7;
+}
+.library-move-btn.is-dragover{
+  background:var(--main);
+  color:#fff;
+  border-color:var(--main);
+  transform:translateY(-2px);
+  box-shadow:0 7px 18px rgba(0,0,0,.12);
+}
+.library-move-status{
+  margin:7px 0 0;
+  text-align:center;
+  font-size:13px;
+  font-weight:800;
+  color:#555;
+}
+.library-move-status[data-kind="error"]{ color:#b42318; }
+.library-move-status[data-kind="same"]{ color:#7a5b00; }
+
+@media (max-width:720px){
+  .library-move-toolbar{
+    width:calc(100% - 30px);
+    margin:7px auto 10px;
+    padding:8px;
+  }
+  .library-move-buttons{ gap:5px; }
+  .library-move-btn{
+    min-width:58px;
+    height:36px;
+    padding:0 10px;
+    font-size:13px;
+  }
 }
