@@ -932,6 +932,201 @@
     bindYoutubeDropToAddArea(document.querySelector(".tag-player-add-video"), input, run);
   }
 
+  const CUSTOM_PLAYLIST_IMPORT_LIMIT = 200;
+  const CUSTOM_PLAYLIST_META_CONCURRENCY = 8;
+
+  function getYoutubePlaylistId(url) {
+    const text = String(url || "").trim();
+    if (!text) return "";
+    if (typeof window.extractPlaylistID === "function") {
+      const id = window.extractPlaylistID(text);
+      if (id) return id;
+    }
+    try {
+      const parsed = new URL(text);
+      return String(parsed.searchParams.get("list") || "").trim();
+    } catch {
+      const match = text.match(/[?&]list=([^&#\s]+)/i);
+      return match ? decodeURIComponent(match[1]) : "";
+    }
+  }
+
+  function setCustomPlaylistImportStatus(message = "", state = "") {
+    const el = document.getElementById("tagPlaylistImportStatus");
+    if (!el) return;
+    el.textContent = message;
+    el.dataset.state = state;
+    el.hidden = !message;
+  }
+
+  async function loadPlaylistMeta(ids, onProgress) {
+    const list = Array.isArray(ids) ? ids.filter(Boolean) : [];
+    if (!list.length) return [];
+    if (typeof window.mapWithConcurrency === "function") {
+      return window.mapWithConcurrency(
+        list,
+        CUSTOM_PLAYLIST_META_CONCURRENCY,
+        async (id) => {
+          const videoUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+          const meta = await S.fetchYouTubeMeta(videoUrl);
+          return { id, videoUrl, meta };
+        },
+        onProgress
+      );
+    }
+
+    const results = [];
+    for (let i = 0; i < list.length; i += 1) {
+      const id = list[i];
+      const videoUrl = `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+      let meta = null;
+      try { meta = await S.fetchYouTubeMeta(videoUrl); } catch {}
+      results.push({ id, videoUrl, meta });
+      try { onProgress?.(i + 1, list.length); } catch {}
+    }
+    return results;
+  }
+
+  async function addYoutubePlaylistToCustomPlaylist({ ytUrl = "", playlist = "", tags = [] } = {}) {
+    const name = S.normalizeTag(playlist);
+    const playlistId = getYoutubePlaylistId(ytUrl);
+    if (!name) return { ok: false, error: "재생목록 이름이 비어 있어." };
+    if (!playlistId) return { ok: false, error: "유튜브 재생목록 링크가 올바르지 않아." };
+    if (typeof window.fetchPlaylistVideoIds !== "function") {
+      return { ok: false, error: "재생목록 불러오기 기능을 준비하지 못했어." };
+    }
+
+    setCustomPlaylistImportStatus("재생목록을 읽는 중...", "loading");
+    S.registerPlaylistTag?.(name);
+
+    let rawIds = [];
+    try {
+      rawIds = await window.fetchPlaylistVideoIds(playlistId);
+    } catch (error) {
+      return { ok: false, error: error?.message || "재생목록을 불러오지 못했어." };
+    }
+
+    const playlistIds = (Array.isArray(rawIds) ? rawIds : []).map((id) => S.safeText(id)).filter(Boolean);
+    if (!playlistIds.length) return { ok: false, error: "재생목록에 불러올 영상이 없어." };
+
+    const items = S.readCustomPlaylistSongs?.(name) || [];
+    const existingById = new Map();
+    items.forEach((song) => {
+      const id = S.safeText(song?.id) || S.extractID(song?.ytUrl || "");
+      if (id && !existingById.has(id)) existingById.set(id, song);
+    });
+
+    const seen = new Set();
+    const duplicateMap = new Map();
+    const chosenIds = [];
+
+    for (const id of playlistIds) {
+      if (existingById.has(id)) {
+        if (!duplicateMap.has(id)) {
+          duplicateMap.set(id, {
+            id,
+            title: S.safeText(existingById.get(id)?.title) || "제목 없음",
+            reason: "existing"
+          });
+        }
+        seen.add(id);
+        continue;
+      }
+
+      if (seen.has(id)) {
+        if (!duplicateMap.has(id)) duplicateMap.set(id, { id, title: "제목 없음", reason: "playlist" });
+        continue;
+      }
+
+      seen.add(id);
+      if (chosenIds.length < CUSTOM_PLAYLIST_IMPORT_LIMIT) chosenIds.push(id);
+    }
+
+    const duplicateEntries = [...duplicateMap.values()];
+    const metaNeededIds = [...new Set([
+      ...chosenIds,
+      ...duplicateEntries.filter((item) => item.reason === "playlist").map((item) => item.id)
+    ])];
+
+    const metaById = new Map();
+    if (metaNeededIds.length) {
+      setCustomPlaylistImportStatus(`영상 정보 불러오는 중... 0 / ${metaNeededIds.length}`, "loading");
+      const metadata = await loadPlaylistMeta(metaNeededIds, (completed, total) => {
+        setCustomPlaylistImportStatus(`영상 정보 불러오는 중... ${completed} / ${total}`, "loading");
+      });
+      metadata.forEach((item) => {
+        if (item?.id) metaById.set(item.id, item);
+      });
+    }
+
+    duplicateEntries.forEach((item) => {
+      const fetchedTitle = S.safeText(metaById.get(item.id)?.meta?.title);
+      if ((!item.title || item.title === "제목 없음") && fetchedTitle) item.title = fetchedTitle;
+    });
+
+    if (duplicateEntries.length && typeof window.openPlaylistDuplicateDialog === "function") {
+      setCustomPlaylistImportStatus(`같은 영상 ${duplicateEntries.length}개 확인 필요`, "warning");
+      const decision = await window.openPlaylistDuplicateDialog(duplicateEntries);
+      if (!decision?.proceed) {
+        setCustomPlaylistImportStatus("재생목록 추가를 취소했어.", "warning");
+        return { ok: false, cancelled: true, error: "재생목록 추가를 취소했어." };
+      }
+    }
+
+    if (!chosenIds.length) {
+      setCustomPlaylistImportStatus(`추가할 새 영상이 없어. 같은 영상 ${duplicateEntries.length}개를 건너뛰었어.`, "done");
+      return { ok: true, added: 0, skipped: duplicateEntries.length, playlist: name };
+    }
+
+    const cleanTags = S.normalizeTags(tags);
+    const now = Date.now();
+    const addedSongs = chosenIds.map((id, order) => {
+      const item = metaById.get(id);
+      const videoUrl = item?.videoUrl || `https://www.youtube.com/watch?v=${encodeURIComponent(id)}`;
+      const meta = item?.meta || {};
+      return S.cleanSong({
+        title: meta.title || "제목 없음",
+        author: meta.author || "",
+        ytUrl: videoUrl,
+        id,
+        lyrics: "",
+        mr: "",
+        score: "",
+        original: "",
+        memo: "",
+        tags: cleanTags,
+        favorite: false,
+        addedAt: now + order,
+        lastPlayedAt: 0,
+        lastPosition: 0,
+        lastDuration: 0,
+        aspect: meta.aspect || "",
+        thumbnailWidth: meta.thumbnailWidth || 0,
+        thumbnailHeight: meta.thumbnailHeight || 0
+      });
+    });
+
+    // 중요: 원래 일본곡 저장소는 건드리지 않고 사용자 재생목록 저장소에만 기록한다.
+    S.writeCustomPlaylistSongs?.(name, [...items, ...addedSongs]);
+
+    const limitNote = chosenIds.length >= CUSTOM_PLAYLIST_IMPORT_LIMIT && playlistIds.length > CUSTOM_PLAYLIST_IMPORT_LIMIT
+      ? ` · 최대 ${CUSTOM_PLAYLIST_IMPORT_LIMIT}개까지 추가`
+      : "";
+    setCustomPlaylistImportStatus(
+      `${addedSongs.length}개 추가 완료${duplicateEntries.length ? ` · 같은 영상 ${duplicateEntries.length}개 건너뜀` : ""}${limitNote}`,
+      "done"
+    );
+
+    return {
+      ok: true,
+      added: addedSongs.length,
+      skipped: duplicateEntries.length,
+      playlist: name,
+      index: items.length + addedSongs.length - 1,
+      song: addedSongs[addedSongs.length - 1] || null
+    };
+  }
+
   function bindPlaylistVideoAdd(selected) {
     const input = document.getElementById("tagPlayerAddUrl");
     const extraInput = document.getElementById("tagPlayerAddExtraTags");
@@ -941,7 +1136,7 @@
       const ytUrl = S.safeLink(input?.value);
       const extraTags = S.normalizeTags(extraInput?.value || "");
       if (!ytUrl) {
-        alert("유튜브 링크를 넣어줘.");
+        alert("유튜브 영상 또는 재생목록 링크를 넣어줘.");
         return;
       }
 
@@ -952,13 +1147,13 @@
       }
 
       try {
-        const result = await S.addVideoToCustomPlaylist?.({
-          ytUrl,
-          playlist: selected,
-          tags: extraTags
-        });
+        const playlistId = getYoutubePlaylistId(ytUrl);
+        const result = playlistId
+          ? await addYoutubePlaylistToCustomPlaylist({ ytUrl, playlist: selected, tags: extraTags })
+          : await S.addVideoToCustomPlaylist?.({ ytUrl, playlist: selected, tags: extraTags });
+
         if (!result?.ok) {
-          alert(result?.error || "영상을 추가하지 못했어.");
+          if (!result?.cancelled) alert(result?.error || "영상을 추가하지 못했어.");
           return;
         }
         if (input) input.value = "";
@@ -1020,9 +1215,10 @@
             <span>이 재생목록에만 추가 · 원래 일본곡/태그/카테고리 변경 없음</span>
           </div>
           <div class="tag-player-add-row playlist-only-add-row">
-            <input id="tagPlayerAddUrl" placeholder="유튜브 링크" />
+            <input id="tagPlayerAddUrl" placeholder="유튜브 영상 또는 재생목록 링크" />
             <button id="tagPlayerAddBtn" type="button">추가</button>
           </div>
+          <p id="tagPlaylistImportStatus" class="playlist-import-status" aria-live="polite" hidden></p>
           <input id="tagPlayerAddExtraTags" class="tag-player-extra-tags" placeholder="이 재생목록 안에서만 쓸 태그 (선택)" />
         </div>
       `;
