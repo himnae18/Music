@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>유튜브 영상 1P</title>
-  <link rel="stylesheet" href="../style.css?v=20260901movebar1" />
+  <link rel="stylesheet" href="../style.css?v=20260902splitadd1" />
 </head>
 <body data-store="yt1pVideos">
 <button id="hamburgerBtn" class="hamburger" type="button">☰</button>
@@ -27,9 +27,17 @@
     <aside class="left-library-panel" aria-label="영상 추가와 재생목록">
       <section class="add-song-section" aria-label="영상 추가">
         <h2>🎬 영상 추가</h2>
-        <div class="add-song-row">
-          <input id="yt" placeholder="유튜브 영상 또는 재생목록 링크" />
-          <button class="add-song-btn" type="button" onclick="addSong()">추가</button>
+        <div class="add-song-fields">
+          <div class="add-song-row add-video-row">
+            <label class="add-song-kind" for="yt">영상</label>
+            <input id="yt" placeholder="유튜브 영상 링크" />
+            <button class="add-song-btn" type="button" onclick="addSong()">추가</button>
+          </div>
+          <div class="add-song-row add-playlist-row">
+            <label class="add-song-kind" for="ytPlaylist">재생목록</label>
+            <input id="ytPlaylist" placeholder="유튜브 재생목록 링크" />
+            <button class="add-song-btn playlist-add-btn" type="button" onclick="addPlaylist()">추가</button>
+          </div>
         </div>
       </section>
 
@@ -92,7 +100,7 @@
 <script src="../nav.js?v=20260901oneway1"></script>
 <script src="../js/app-ui.js?v=20260828librarytools1"></script>
 <script src="../js/app-modal.js?v=20260728titletagdrag1"></script>
-<script src="../js/app-player.js?v=20260901oneway1"></script>
+<script src="../js/app-player.js?v=20260902splitadd1"></script>
 <script src="../js/app-transfer.js?v=20260901movebar1"></script>
 </body>
 </html>

@@ -18,8 +18,8 @@ function extractPlaylistID(url) {
 }
 
 function ensurePlaylistImportStatusElement() {
-  const ytInput = document.getElementById("yt");
-  const row = ytInput?.closest(".add-song-row");
+  const playlistInput = document.getElementById("ytPlaylist") || document.getElementById("yt");
+  const row = playlistInput?.closest(".add-song-row");
   if (!row) return null;
 
   let el = document.getElementById("playlistImportStatus");
@@ -42,10 +42,10 @@ function setPlaylistImportStatus(message = "", state = "") {
 }
 
 function setPlaylistImportControlsBusy(busy) {
-  const ytInput = document.getElementById("yt");
-  const addButton = ytInput?.closest(".add-song-row")?.querySelector(".add-song-btn")
+  const playlistInput = document.getElementById("ytPlaylist") || document.getElementById("yt");
+  const addButton = playlistInput?.closest(".add-song-row")?.querySelector(".add-song-btn")
     || document.querySelector(".add-song-section .add-song-btn");
-  if (ytInput) ytInput.disabled = !!busy;
+  if (playlistInput) playlistInput.disabled = !!busy;
   if (addButton) {
     addButton.disabled = !!busy;
     if (!addButton.dataset.defaultText) addButton.dataset.defaultText = addButton.textContent || "추가";
@@ -441,7 +441,7 @@ async function addYouTubePlaylist(ytUrl, playlistId) {
 
     if (!chosenIds.length) {
       setPlaylistImportStatus(`추가할 새 영상이 없어. 같은 영상 ${duplicateEntries.length}개를 건너뛰었어.`, "done");
-      const input = document.getElementById("yt");
+      const input = document.getElementById("ytPlaylist") || document.getElementById("yt");
       if (input) input.value = "";
       return { added: 0, skipped: duplicateEntries.length, total: playlistIds.length };
     }
@@ -489,7 +489,7 @@ async function addYouTubePlaylist(ytUrl, playlistId) {
     save();
     showList();
 
-    const input = document.getElementById("yt");
+    const input = document.getElementById("ytPlaylist") || document.getElementById("yt");
     if (input) input.value = "";
 
     const limitNote = chosenIds.length >= PLAYLIST_IMPORT_LIMIT && playlistIds.length > PLAYLIST_IMPORT_LIMIT
@@ -518,17 +518,9 @@ async function addSong() {
   const mr = safeLink(document.getElementById("mr")?.value);
   const score = safeLink(document.getElementById("score")?.value);
   const original = safeLink(document.getElementById("original")?.value);
-  const playlistId = extractPlaylistID(ytUrl);
-
-  // list=가 들어있는 주소는 영상 1개가 아니라 재생목록 가져오기로 처리한다.
-  if (ytUrl && playlistId) {
-    await addYouTubePlaylist(ytUrl, playlistId);
-    return;
-  }
-
   const id = extractID(ytUrl);
   if (!ytUrl || !id) {
-    alert("유튜브 영상 또는 재생목록 링크가 올바르지 않아!");
+    alert("유튜브 영상 링크가 올바르지 않아!");
     return;
   }
 
@@ -592,6 +584,19 @@ async function addSong() {
   });
 
   play(current);
+}
+
+async function addPlaylist() {
+  const input = document.getElementById("ytPlaylist");
+  const ytUrl = safeLink(input?.value);
+  const playlistId = extractPlaylistID(ytUrl);
+
+  if (!ytUrl || !playlistId) {
+    alert("유튜브 재생목록 링크가 올바르지 않아!");
+    return;
+  }
+
+  await addYouTubePlaylist(ytUrl, playlistId);
 }
 
 function deleteSong(index) {
@@ -916,9 +921,21 @@ function bindAddSongDropTargets() {
   const ytInput = document.getElementById("yt");
   if (!ytInput) return;
 
-  const addButton = ytInput.closest(".add-song-row")?.querySelector(".add-song-btn");
+  const playlistInput = document.getElementById("ytPlaylist");
+  const videoRow = ytInput.closest(".add-song-row");
+  const playlistRow = playlistInput?.closest(".add-song-row");
+  const addButton = videoRow?.querySelector(".add-song-btn");
+  const playlistButton = playlistRow?.querySelector(".add-song-btn");
   const addSection = ytInput.closest(".add-song-section");
-  const targets = [...new Set([addSection, ytInput, addButton].filter(Boolean))];
+  const targets = [...new Set([
+    addSection,
+    videoRow,
+    ytInput,
+    addButton,
+    playlistRow,
+    playlistInput,
+    playlistButton
+  ].filter(Boolean))];
 
   targets.forEach((target) => {
     if (target.dataset.youtubeAddDropBound === "1") return;
@@ -950,8 +967,13 @@ function bindAddSongDropTargets() {
       e.stopPropagation();
       targets.forEach((el) => el.classList.remove("is-url-dragover"));
       if (addSection) addSection.classList.remove("is-url-dragover");
-      ytInput.value = url;
-      addSong();
+      if (extractPlaylistID(url) && playlistInput) {
+        playlistInput.value = url;
+        addPlaylist();
+      } else {
+        ytInput.value = url;
+        addSong();
+      }
     });
   });
 }
@@ -1655,14 +1677,24 @@ function isShortcutTypingTarget(target) {
 document.addEventListener("DOMContentLoaded", () => {
   ensureTopTrackNavButtons();
   const ytInput = document.getElementById("yt");
+  const playlistInput = document.getElementById("ytPlaylist");
   if (ytInput) {
-    ytInput.placeholder = "유튜브 영상 또는 재생목록 링크";
+    ytInput.placeholder = "유튜브 영상 링크";
+  }
+  if (playlistInput) {
+    playlistInput.placeholder = "유튜브 재생목록 링크";
   }
 
   ytInput?.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" || e.isComposing) return;
     e.preventDefault();
     addSong();
+  });
+
+  playlistInput?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.isComposing) return;
+    e.preventDefault();
+    addPlaylist();
   });
 
   bindAddSongDropTargets();

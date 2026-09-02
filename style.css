@@ -888,11 +888,22 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
 .left-library-panel .add-song-section h2{
   margin:4px 0 18px;
 }
+.left-library-panel .add-song-fields{
+  display:grid;
+  gap:10px;
+}
 .left-library-panel .add-song-row{
   display:grid;
-  grid-template-columns:1fr auto;
-  gap:10px;
+  grid-template-columns:74px minmax(0, 1fr) auto;
+  gap:8px;
   align-items:center;
+}
+.left-library-panel .add-song-kind{
+  text-align:left;
+  color:#444;
+  font-size:14px;
+  font-weight:900;
+  white-space:nowrap;
 }
 .left-library-panel .add-song-row input{
   width:100%;
@@ -902,6 +913,14 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
   height:42px;
   margin:0;
   white-space:nowrap;
+}
+@media (max-width:520px){
+  .left-library-panel .add-song-row{
+    grid-template-columns:1fr auto;
+  }
+  .left-library-panel .add-song-kind{
+    grid-column:1 / -1;
+  }
 }
 .left-library-panel #topDivider{
   width:100%;
