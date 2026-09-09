@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>유튜브 영상 4P</title>
-  <link rel="stylesheet" href="../style.css?v=20260902splitadd1" />
+  <link rel="stylesheet" href="../style.css?v=20260909dedupe1" />
 </head>
 <body data-store="yt4pVideos">
 <button id="hamburgerBtn" class="hamburger" type="button">☰</button>
@@ -32,11 +32,6 @@
             <label class="add-song-kind" for="yt">영상</label>
             <input id="yt" placeholder="유튜브 영상 링크" />
             <button class="add-song-btn" type="button" onclick="addSong()">추가</button>
-          </div>
-          <div class="add-song-row add-playlist-row">
-            <label class="add-song-kind" for="ytPlaylist">재생목록</label>
-            <input id="ytPlaylist" placeholder="유튜브 재생목록 링크" />
-            <button class="add-song-btn playlist-add-btn" type="button" onclick="addPlaylist()">추가</button>
           </div>
         </div>
       </section>
@@ -77,8 +72,10 @@
     <button id="tabMr" class="tab-link tab-disabled" type="button">메모</button>
     <button id="tabOriginal" class="tab-link tab-disabled-soft" type="button">기타</button>
     <button id="tabTitleTags" class="tab-link tab-disabled-soft" type="button">태그</button>
-    <button id="tabFiveP" class="tab-link tab-disabled-soft" type="button">5P</button>
-    <button id="tabSixP" class="tab-link tab-disabled-soft" type="button">6P</button>
+    <div class="side-playlist-picker">
+      <button id="tabPlaylists" class="tab-link" type="button" aria-expanded="false" aria-controls="sidePlaylistMenu">재생목록 ▾</button>
+      <div id="sidePlaylistMenu" class="side-playlist-menu" hidden aria-label="오른쪽에 표시할 재생목록"></div>
+    </div>
   </div>
 
   <div id="lyricsNowTitle" class="lyrics-now-title">재생중인 영상이 없어</div>
@@ -96,11 +93,11 @@
   </div>
 </div>
 
-<script src="../js/app-state.js?v=20260901oneway1"></script>
-<script src="../nav.js?v=20260901oneway1"></script>
-<script src="../js/app-ui.js?v=20260828librarytools1"></script>
+<script src="../js/app-state.js?v=20260909dedupe1"></script>
+<script src="../nav.js?v=20260909navdrop2"></script>
+<script src="../js/app-ui.js?v=20260909moveundo1"></script>
 <script src="../js/app-modal.js?v=20260728titletagdrag1"></script>
 <script src="../js/app-player.js?v=20260902splitadd1"></script>
-<script src="../js/app-transfer.js?v=20260901movebar1"></script>
+<script src="../js/app-transfer.js?v=20260909moveundo1"></script>
 </body>
 </html>

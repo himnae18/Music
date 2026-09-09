@@ -4723,3 +4723,308 @@ body[data-store="bgmSongs"] .duplicate-group-main{
     font-size:13px;
   }
 }
+
+/* Shared playlist dropdown in the right drawer. */
+.lyrics-tabs { position:relative; overflow:visible; }
+.side-playlist-picker { position:static; }
+.side-playlist-menu[hidden] { display:none; }
+.side-playlist-menu { position:absolute; top:100%; right:12px; width:min(310px, calc(100% - 24px)); max-height:min(65vh, 540px); overflow:auto; z-index:50; background:#fff; border:1px solid #ccc; border-radius:8px; box-shadow:0 8px 24px #0003; padding:6px; }
+.side-menu-label { padding:10px 10px 6px; font-size:14px; font-weight:700; color:#666; border-top:1px solid #eee; }
+.side-menu-label:first-child { border-top:0; }
+.side-playlist-menu button { display:flex; justify-content:space-between; gap:12px; width:100%; margin:0; padding:9px 10px; text-align:left; font-size:14px; line-height:1.4; border:0; border-radius:4px; background:#fff; color:#222; }
+.side-playlist-menu button span:first-child { overflow-wrap:anywhere; }
+.side-playlist-menu button span:last-child { color:#777; flex-shrink:0; }
+.side-playlist-menu button:hover, .side-playlist-menu button:focus-visible { background:#fbe5ec; outline:2px solid #b5204c; outline-offset:-2px; }
+.side-playlist-menu button[aria-pressed="true"] { background:#fbe5ec; font-weight:700; color:#b5204c; }
+.side-menu-empty { padding:10px; font-size:14px; color:#666; }
+.side-playlist-status { margin:0; color:#247a3c; font-size:14px; }
+.side-playlist-status:empty { display:none; }
+.side-playlist-panel .fivep-meta strong, .side-playlist-panel .fivep-add-btn, .side-playlist-panel .fivep-help { font-size:14px; }
+.side-playlist-panel .fivep-add-btn:disabled { background:#ddd; color:#666; cursor:default; }
+@media(max-width:400px) { .side-playlist-panel .fivep-video-card { grid-template-columns:72px minmax(0,1fr) auto; gap:6px; } .side-playlist-panel .fivep-thumb img { width:72px; height:44px; } }
+
+/* Right-panel copy destination, including the left navigation links. */
+#drawer .drawer-menu-link.side-copy-dragover, .left-library-panel.side-copy-dragover, [data-move-store].side-copy-dragover { outline:3px solid #2ea44f; outline-offset:-3px; background:#e9f8ed; color:#155f2c; }
+
+/* 3-second undo notice for drag-and-drop moves. */
+.move-undo-toast{
+  position:fixed;
+  left:18px;
+  bottom:18px;
+  z-index:10050;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  max-width:min(360px, calc(100vw - 36px));
+  padding:12px 12px 12px 14px;
+  border:1px solid rgba(0,0,0,.12);
+  border-radius:12px;
+  background:#fff;
+  color:#222;
+  box-shadow:0 10px 30px rgba(0,0,0,.18);
+  font-size:14px;
+  font-weight:800;
+  opacity:0;
+  transform:translateY(10px);
+  pointer-events:none;
+  transition:opacity .16s ease, transform .16s ease;
+}
+.move-undo-toast.show{
+  opacity:1;
+  transform:translateY(0);
+  pointer-events:auto;
+}
+.move-undo-text{
+  min-width:0;
+  line-height:1.35;
+}
+.move-undo-btn{
+  flex:0 0 auto;
+  min-height:34px;
+  padding:0 12px;
+  border:0;
+  border-radius:9px;
+  background:var(--main, #b5204c);
+  color:#fff;
+  font:inherit;
+  font-size:13px;
+  font-weight:900;
+  cursor:pointer;
+}
+.move-undo-btn:hover{ filter:brightness(.95); }
+.move-undo-btn:focus-visible{ outline:3px solid rgba(181,32,76,.25); outline-offset:2px; }
+@media(max-width:480px){
+  .move-undo-toast{ left:10px; bottom:10px; max-width:calc(100vw - 20px); }
+}
+
+
+/* =========================
+   중복 영상 정리
+========================= */
+.backup-tools .duplicate-cleanup-open-btn{
+  background:#3f3f3f;
+}
+.backup-tools .duplicate-cleanup-open-btn:hover{
+  background:#1f1f1f;
+}
+.duplicate-cleanup-overlay{
+  position:fixed;
+  inset:0;
+  z-index:10050;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  background:rgba(0,0,0,.42);
+  backdrop-filter:blur(2px);
+}
+.duplicate-cleanup-box{
+  width:min(760px, 96vw);
+  max-height:min(820px, 92vh);
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  background:#fff;
+  border:1px solid #ddd;
+  border-radius:18px;
+  box-shadow:0 20px 60px rgba(0,0,0,.22);
+}
+.duplicate-cleanup-header{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  padding:20px 20px 12px;
+  border-bottom:1px solid #eee;
+}
+.duplicate-cleanup-header h3{
+  margin:0 0 5px;
+  font-size:20px;
+}
+.duplicate-cleanup-header p{
+  margin:0;
+  color:#777;
+  font-size:13px;
+  line-height:1.45;
+}
+.duplicate-cleanup-close{
+  flex:0 0 auto;
+  width:36px;
+  height:36px;
+  padding:0;
+  border:none;
+  border-radius:10px;
+  background:#f1f1f1;
+  color:#444;
+  font-size:24px;
+  line-height:1;
+}
+.duplicate-cleanup-close:hover{ background:#e5e5e5; }
+.duplicate-cleanup-select-grid{
+  display:grid;
+  grid-template-columns:repeat(4, minmax(0,1fr));
+  gap:8px;
+  padding:14px 20px 10px;
+}
+.duplicate-cleanup-option{
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:9px 10px;
+  border:1px solid #ddd;
+  border-radius:11px;
+  background:#fafafa;
+  cursor:pointer;
+  font-size:13px;
+  font-weight:700;
+}
+.duplicate-cleanup-option:has(input:checked){
+  border-color:#333;
+  background:#f0f0f0;
+  box-shadow:inset 0 0 0 1px #333;
+}
+.duplicate-cleanup-option input{
+  width:16px;
+  height:16px;
+  margin:0;
+  accent-color:#333;
+}
+.duplicate-cleanup-quick-actions{
+  display:flex;
+  gap:7px;
+  padding:0 20px 12px;
+}
+.duplicate-cleanup-quick-actions button{
+  padding:7px 10px;
+  border:none;
+  border-radius:9px;
+  background:#eee;
+  color:#444;
+  font-size:12px;
+  font-weight:800;
+}
+.duplicate-cleanup-preview{
+  min-height:150px;
+  flex:1;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
+  margin:0 20px;
+  border:1px solid #e2e2e2;
+  border-radius:13px;
+  background:#fafafa;
+}
+.duplicate-cleanup-summary{
+  margin:0;
+  padding:12px 14px;
+  border-bottom:1px solid #e6e6e6;
+  background:#fff;
+  color:#555;
+  font-size:13px;
+  font-weight:800;
+}
+.duplicate-cleanup-results{
+  overflow:auto;
+  padding:8px;
+}
+.duplicate-cleanup-empty{
+  padding:36px 14px;
+  text-align:center;
+  color:#999;
+  font-weight:800;
+}
+.duplicate-cleanup-item{
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  padding:11px 10px;
+  border-bottom:1px solid #e8e8e8;
+  background:#fff;
+}
+.duplicate-cleanup-item:last-child{ border-bottom:none; }
+.duplicate-cleanup-number{
+  flex:0 0 auto;
+  width:25px;
+  height:25px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  background:#333;
+  color:#fff;
+  font-size:11px;
+  font-weight:900;
+}
+.duplicate-cleanup-item-main{
+  min-width:0;
+  flex:1;
+}
+.duplicate-cleanup-item-main strong{
+  display:block;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:#222;
+  font-size:14px;
+}
+.duplicate-cleanup-locations{
+  display:flex;
+  flex-wrap:wrap;
+  gap:5px;
+  margin-top:7px;
+}
+.duplicate-cleanup-locations span{
+  padding:4px 7px;
+  border-radius:999px;
+  background:#efefef;
+  color:#555;
+  font-size:11px;
+  font-weight:800;
+}
+.duplicate-cleanup-note{
+  margin:12px 20px 0;
+  padding:10px 12px;
+  border-radius:11px;
+  background:#f5f5f5;
+  color:#666;
+  font-size:12px;
+  line-height:1.5;
+}
+.duplicate-cleanup-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+  padding:14px 20px 20px;
+}
+.duplicate-cleanup-actions button{
+  min-width:92px;
+  padding:10px 15px;
+  border:none;
+  border-radius:11px;
+  font-weight:900;
+}
+.duplicate-cleanup-cancel{
+  background:#eee;
+  color:#444;
+}
+.duplicate-cleanup-run{
+  background:#333;
+  color:#fff;
+}
+.duplicate-cleanup-run:disabled{
+  opacity:.4;
+  cursor:not-allowed;
+}
+.duplicate-cleanup-run:not(:disabled):hover{ background:#111; }
+
+@media (max-width:700px){
+  .duplicate-cleanup-overlay{ padding:10px; }
+  .duplicate-cleanup-box{ max-height:94vh; }
+  .duplicate-cleanup-select-grid{ grid-template-columns:repeat(2, minmax(0,1fr)); padding-left:14px; padding-right:14px; }
+  .duplicate-cleanup-header{ padding-left:14px; padding-right:14px; }
+  .duplicate-cleanup-quick-actions{ padding-left:14px; padding-right:14px; }
+  .duplicate-cleanup-preview{ margin-left:14px; margin-right:14px; }
+  .duplicate-cleanup-note{ margin-left:14px; margin-right:14px; }
+  .duplicate-cleanup-actions{ padding-left:14px; padding-right:14px; }
+}

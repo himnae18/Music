@@ -24,6 +24,7 @@
       location.pathname.includes("/china/") ||
       location.pathname.includes("/korea/") ||
       location.pathname.includes("/english/") ||
+      location.pathname.includes("/bgm/") ||
       location.pathname.includes("/youtube/") ? "../" : "";
   }
 
@@ -481,6 +482,333 @@
     if (tags.length === 0) return mode === "list" ? "" : `<p class="tag-empty">태그가 아직 없어.</p>`;
     const counts = new Map(S.getTagCounts("all"));
     return `<div class="song-tags song-tags-${mode}">${tags.map((tag) => tagChipHTML(tag, counts.get(tag) || 1)).join("")}</div>`;
+  }
+
+
+  // One shared side panel reads the existing collections; no separate playlist data.
+  let sideCollectionId = 'store:yt5pVideos';
+  try { sideCollectionId = localStorage.getItem('musicSideCollectionV1') || sideCollectionId; } catch {}
+  let sideNotice = '';
+  const SIDE_MIME = 'application/x-side-playlist-song';
+  let sideUndoTimer = null;
+  let sideUndoAction = null;
+
+  function showMoveUndoToast(undoAction, message = '영상이 이동됐어. 되돌릴까?') {
+    let toast = document.getElementById('moveUndoToast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'moveUndoToast';
+      toast.className = 'move-undo-toast';
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
+      toast.innerHTML = `<span class="move-undo-text"></span><button type="button" class="move-undo-btn">되돌리기</button>`;
+      document.body.appendChild(toast);
+      toast.querySelector('.move-undo-btn')?.addEventListener('click', () => {
+        const action = sideUndoAction;
+        sideUndoAction = null;
+        clearTimeout(sideUndoTimer);
+        toast.classList.remove('show');
+        if (typeof action === 'function') action();
+      });
+    }
+
+    sideUndoAction = typeof undoAction === 'function' ? undoAction : null;
+    const text = toast.querySelector('.move-undo-text');
+    if (text) text.textContent = message;
+    toast.classList.remove('show');
+    void toast.offsetWidth;
+    toast.classList.add('show');
+    clearTimeout(sideUndoTimer);
+    sideUndoTimer = setTimeout(() => {
+      sideUndoAction = null;
+      toast.classList.remove('show');
+    }, 3000);
+  }
+  window.showMoveUndoToast = showMoveUndoToast;
+
+  function sideCollections() {
+    const stores = (S.ALL_STORES || []).map(item => ({
+      id: `store:${item.key}`, key: item.key,
+      label: item.label.replace('유튜브 영상 ', '').replace('일본어', '일본'),
+      href: getCollectionPageHref(item)
+    }));
+    const names = [...new Set([...(S.readPlaylistTags?.() || []), ...Object.keys(S.readCustomPlaylists?.() || {})])];
+    return [...stores, ...names.map(name => ({ id: `playlist:${name}`, name, label: name,
+      href: `${getSubPagePrefix()}tag.html?playlist=${encodeURIComponent(name)}` }))];
+  }
+
+  function selectedSideCollection() {
+    const choices = sideCollections();
+    return choices.find(item => item.id === sideCollectionId) || choices[0];
+  }
+
+  function currentSideTarget() {
+    const name = S.isPlaylistPage?.() ? S.getCurrentPlaylistParam?.() : '';
+    return sideCollections().find(item => name ? item.name === name : item.key === S.storeKey);
+  }
+
+  function sideSongs(collection) {
+    if (!collection) return [];
+    if (collection.id === currentSideTarget()?.id) return S.songs || [];
+    return collection.name ? S.readCustomPlaylistSongs(collection.name) : S.cleanSongArray(S.readStorage(collection.key));
+  }
+
+  function sideSameVideo(a, b) {
+    const ai = a.id || S.extractID(a.ytUrl), bi = b.id || S.extractID(b.ytUrl);
+    return !!((ai && bi && ai === bi) || (a.ytUrl && a.ytUrl === b.ytUrl));
+  }
+
+  function writeSideSongs(collection, items) {
+    if (!collection) throw new Error('collection missing');
+    const cleanItems = S.cleanSongArray(items);
+    if (collection.name) S.writeCustomPlaylistSongs(collection.name, cleanItems);
+    else S.writeStorage(collection.key, cleanItems);
+
+    if (collection.id === currentSideTarget()?.id) {
+      S.songs = cleanItems;
+      S.current = Math.max(0, Math.min(Number(S.current) || 0, Math.max(0, cleanItems.length - 1)));
+      showList?.();
+      updatePageSearchSummary?.();
+    }
+    window.updateDrawerCounts?.();
+  }
+
+  function copySideSong(song, target) {
+    if (!target) { sideNotice = '추가할 일본·영어·1~6P 또는 재생목록 페이지를 먼저 열어줘.'; updateLyricsDrawer(); return false; }
+    const clean = S.cleanSong(song);
+    if (!clean || !(clean.id || S.extractID(clean.ytUrl))) return false;
+    const items = sideSongs(target);
+    if (items.some(item => sideSameVideo(item, clean))) {
+      sideNotice = `${target.label}에 이미 있는 영상이야.`;
+      updateLyricsDrawer();
+      return false;
+    }
+    try {
+      writeSideSongs(target, [...items, clean]);
+      sideNotice = `${target.label}에 추가했어.`;
+    } catch { sideNotice = '저장하지 못했어. 저장 공간을 확인하고 다시 시도해줘.'; }
+    updateLyricsDrawer();
+    return true;
+  }
+
+  function sideCollectionById(id) {
+    return sideCollections().find(item => item.id === id) || null;
+  }
+
+  function findSideSongIndex(items, song, preferredIndex = -1) {
+    const index = Number(preferredIndex);
+    if (Number.isInteger(index) && index >= 0 && items[index] && sideSameVideo(items[index], song)) return index;
+    return items.findIndex(item => sideSameVideo(item, song));
+  }
+
+  function makeSideDragPayload(song, collection, index) {
+    return { song: S.cleanSong(song), sourceCollectionId: collection?.id || '', sourceIndex: Number(index) };
+  }
+
+  function readSideDragPayload(raw) {
+    if (!raw) return null;
+    const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (parsed?.song) return parsed;
+    return { song: parsed, sourceCollectionId: '', sourceIndex: Number(parsed?.sourceIndex) };
+  }
+
+  function moveSideSong(payload, target) {
+    if (!target || !payload?.song) return false;
+    const source = sideCollectionById(payload.sourceCollectionId) || currentSideTarget();
+    if (!source) return copySideSong(payload.song, target);
+    if (source.id === target.id) {
+      sideNotice = `이미 ${target.label}에 있는 영상이야.`;
+      updateLyricsDrawer();
+      return false;
+    }
+
+    const clean = S.cleanSong(payload.song);
+    if (!clean || !(clean.id || S.extractID(clean.ytUrl))) return false;
+    const sourceBefore = S.cleanSongArray(sideSongs(source));
+    const targetBefore = S.cleanSongArray(sideSongs(target));
+    const sourceIndex = findSideSongIndex(sourceBefore, clean, payload.sourceIndex);
+    if (sourceIndex < 0) {
+      sideNotice = '원래 목록에서 영상을 찾지 못했어.';
+      updateLyricsDrawer();
+      return false;
+    }
+
+    const targetHasSong = targetBefore.some(item => sideSameVideo(item, clean));
+    const sourceAfter = [...sourceBefore];
+    sourceAfter.splice(sourceIndex, 1);
+    const targetAfter = targetHasSong ? targetBefore : [...targetBefore, clean];
+
+    try {
+      if (!targetHasSong) writeSideSongs(target, targetAfter);
+      writeSideSongs(source, sourceAfter);
+    } catch {
+      try {
+        if (!targetHasSong) writeSideSongs(target, targetBefore);
+        writeSideSongs(source, sourceBefore);
+      } catch {}
+      sideNotice = '이동하지 못했어. 저장 공간을 확인하고 다시 시도해줘.';
+      updateLyricsDrawer();
+      return false;
+    }
+
+    sideNotice = targetHasSong
+      ? `${target.label}에 이미 있어서 원래 목록에서만 뺐어.`
+      : `${target.label}로 이동했어.`;
+    updateLyricsDrawer();
+
+    showMoveUndoToast(() => {
+      try {
+        if (!targetHasSong) writeSideSongs(target, targetBefore);
+        writeSideSongs(source, sourceBefore);
+        sideNotice = '이동을 되돌렸어.';
+        updateLyricsDrawer();
+      } catch {
+        sideNotice = '되돌리지 못했어.';
+        updateLyricsDrawer();
+      }
+    }, `${target.label}로 이동했어. 되돌릴까?`);
+    return true;
+  }
+
+  function closeSideMenu() {
+    const menu = document.getElementById('sidePlaylistMenu');
+    if (menu) menu.hidden = true;
+    document.getElementById('tabPlaylists')?.setAttribute('aria-expanded', 'false');
+  }
+
+  function bindSideMenu() {
+    const button = document.getElementById('tabPlaylists');
+    const menu = document.getElementById('sidePlaylistMenu');
+    if (!button || !menu || button.dataset.bound) return;
+    button.dataset.bound = '1';
+    button.addEventListener('click', () => {
+      if (!menu.hidden) { closeSideMenu(); return; }
+      const choices = sideCollections();
+      const group = (label, items) => `<div class="side-menu-label">${label}</div>${items.map(item =>
+        `<button type="button" data-side-choice="${S.escapeHTML(item.id)}" aria-pressed="${item.id === selectedSideCollection()?.id}"><span>${S.escapeHTML(item.label)}</span><span>${sideSongs(item).length}</span></button>`).join('')}`;
+      menu.innerHTML = group('페이지', choices.filter(item => item.key)) + group('내 재생목록', choices.filter(item => item.name)) + (choices.some(item => item.name) ? '' : '<p class="side-menu-empty">왼쪽 +에서 추가한 재생목록이 여기에 표시돼.</p>');
+      menu.hidden = false;
+      button.setAttribute('aria-expanded', 'true');
+      menu.querySelectorAll('[data-side-choice]').forEach(item => item.addEventListener('click', () => {
+        sideCollectionId = item.dataset.sideChoice;
+        try { localStorage.setItem('musicSideCollectionV1', sideCollectionId); } catch {}
+        sideNotice = '';
+        closeSideMenu();
+        setTab('playlists');
+        button.focus();
+      }));
+    });
+    document.addEventListener('click', event => { if (!event.target.closest('.side-playlist-picker')) closeSideMenu(); });
+    document.addEventListener('keydown', event => {
+      if (menu.hidden) return;
+      if (event.key === 'Escape') { closeSideMenu(); button.focus(); }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const items = [...menu.querySelectorAll('button')];
+        const index = items.indexOf(document.activeElement);
+        items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+      }
+    });
+    window.addEventListener('storage', event => {
+      if (activeTab === 'playlists' && (event.key === null || event.key === 'musicCustomPlaylistsV1' || event.key === 'musicPlaylistTags' || S.ALL_STORES.some(item => item.key === event.key))) updateLyricsDrawer();
+    });
+    // Capture side-panel copies before existing navigation/reorder handlers.
+    const dropSelector = '.left-library-panel, [data-move-store], #drawer [data-side-drop-store], #drawer [data-playlist-drop-name]';
+    const clearDropHighlight = () => document.querySelectorAll('.side-copy-dragover').forEach(el => el.classList.remove('side-copy-dragover'));
+    document.addEventListener('dragover', event => {
+      if (!Array.from(event.dataTransfer?.types || []).includes(SIDE_MIME)) return;
+      const destination = event.target.closest(dropSelector);
+      clearDropHighlight();
+      if (!destination) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      event.dataTransfer.dropEffect = 'move';
+      destination.classList.add('side-copy-dragover');
+    }, true);
+    document.addEventListener('dragleave', event => {
+      const destination = event.target.closest(dropSelector);
+      if (destination && !destination.contains(event.relatedTarget)) destination.classList.remove('side-copy-dragover');
+    }, true);
+    document.addEventListener('dragend', clearDropHighlight, true);
+    document.addEventListener('drop', event => {
+      clearDropHighlight();
+      const raw = event.dataTransfer?.getData(SIDE_MIME);
+      const destination = event.target.closest(dropSelector);
+      if (!raw || !destination) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      try {
+        moveSideSong(readSideDragPayload(raw), sideDropTarget(destination));
+      } catch {}
+    }, true);
+  }
+
+  function sideDropTarget(destination) {
+    const key = destination.dataset.sideDropStore || destination.dataset.moveStore;
+    const name = destination.dataset.playlistDropName;
+    if (key) return sideCollections().find(item => item.key === key);
+    if (name) return sideCollections().find(item => item.name === name);
+    return currentSideTarget();
+  }
+
+  function renderSidePlaylist(titleEl, textEl, mediaEl, tagEl, headTitle) {
+    const collection = selectedSideCollection();
+    const items = sideSongs(collection);
+    const target = currentSideTarget();
+    document.getElementById('tabPlaylists')?.classList.add('tab-active');
+    if (headTitle) headTitle.textContent = '재생목록';
+    titleEl.textContent = `${collection.label} · ${items.length}개`;
+    if (tagEl) tagEl.innerHTML = '';
+    textEl.style.display = 'none';
+    mediaEl.style.display = 'block';
+    mediaEl.innerHTML = `<section class="side-playlist-panel fivep-panel">
+      <p class="fivep-help">넣기 버튼을 누르면 ${S.escapeHTML(target?.label || '현재 페이지')}로 이동되고 원래 목록에서는 사라져. 영상을 왼쪽 메뉴의 1P·2P·3P·4P나 원하는 재생목록 위로 끌어도 똑같이 이동돼. 이동 후 3초 동안 되돌릴 수 있어.</p>
+      <a class="fivep-open-page" href="${S.escapeHTML(collection.href)}">${S.escapeHTML(collection.label)} 페이지 열기</a>
+      <p class="side-playlist-status" role="status">${S.escapeHTML(sideNotice)}</p>
+      <div class="fivep-video-list">${items.map((song,index) => {
+        const id = song.id || S.extractID(song.ytUrl);
+        return `<article class="fivep-video-card" draggable="true" data-side-index="${index}">
+          <div class="fivep-thumb">${id ? `<img loading="lazy" draggable="false" src="https://i.ytimg.com/vi/${encodeURIComponent(id)}/hqdefault.jpg" alt="">` : ''}</div>
+          <div class="fivep-meta"><strong>${S.escapeHTML(song.title || '제목 없음')}</strong><span>${S.escapeHTML(song.author || '')}</span></div>
+          <button type="button" class="fivep-add-btn" ${!target || target.id === collection.id ? 'disabled' : ''}>${target?.id === collection.id ? '현재' : '넣기'}</button>
+        </article>`;
+      }).join('') || '<p class="fivep-help">아직 영상이 없어. 현재 페이지의 영상을 여기로 끌어 추가해줘.</p>'}</div>
+    </section>`;
+    mediaEl.querySelectorAll('[data-side-index]').forEach(card => {
+      const song = items[Number(card.dataset.sideIndex)];
+      card.addEventListener('dragstart', event => {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData(SIDE_MIME, JSON.stringify(makeSideDragPayload(song, collection, Number(card.dataset.sideIndex))));
+      });
+      card.querySelector('button').addEventListener('click', () => {
+        moveSideSong(makeSideDragPayload(song, collection, Number(card.dataset.sideIndex)), currentSideTarget());
+      });
+    });
+    const panel = mediaEl.querySelector('.side-playlist-panel');
+    const types = ['application/x-library-song', SIDE_MIME];
+    panel.addEventListener('dragover', event => {
+      if (!types.some(type => Array.from(event.dataTransfer?.types || []).includes(type))) return;
+      event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = 'move'; panel.classList.add('fivep-drop-over');
+    });
+    panel.addEventListener('dragleave', event => { if (!panel.contains(event.relatedTarget)) panel.classList.remove('fivep-drop-over'); });
+    panel.addEventListener('drop', event => {
+      panel.classList.remove('fivep-drop-over');
+      const raw = types.map(type => event.dataTransfer?.getData(type)).find(Boolean);
+      if (!raw) return;
+      event.preventDefault(); event.stopPropagation();
+      try {
+        const sideRaw = event.dataTransfer?.getData(SIDE_MIME);
+        if (sideRaw) {
+          moveSideSong(readSideDragPayload(sideRaw), collection);
+        } else {
+          const libraryRaw = event.dataTransfer?.getData('application/x-library-song');
+          const parsed = libraryRaw ? JSON.parse(libraryRaw) : null;
+          moveSideSong({
+            song: parsed,
+            sourceCollectionId: currentSideTarget()?.id || '',
+            sourceIndex: Number(parsed?.sourceIndex)
+          }, collection);
+        }
+      } catch {}
+    });
   }
 
   function getFivePStore() {
@@ -1651,7 +1979,8 @@ ${actionButtonHTML}
   }
 
   function normalizeDrawerTab(tab) {
-    return ["lyrics", "tagdesc", "mr", "videomemo", "original", "titletags", "fivep", "sixp"].includes(tab) ? tab : "lyrics";
+    if (tab === "fivep" || tab === "sixp") { sideCollectionId = `store:yt${tab === "fivep" ? 5 : 6}pVideos`; return "playlists"; }
+    return ["lyrics", "tagdesc", "mr", "videomemo", "original", "titletags", "fivep", "sixp", "playlists"].includes(tab) ? tab : "lyrics";
   }
 
   function normalizeLyricsSubTab(tab) {
@@ -2332,8 +2661,12 @@ ${actionButtonHTML}
       if (tabTitleTags) tabTitleTags.hidden = false;
       tabMr.textContent = "메모";
     }
-    bindFivePTabDrop();
-    bindSixPTabDrop();
+    bindSideMenu();
+    setTabClass(document.getElementById('tabPlaylists'));
+    if (activeTab === 'playlists') {
+      renderSidePlaylist(titleEl, textEl, mediaEl, tagEl, headTitle);
+      return;
+    }
 
     if (activeTab === "titletags" && tabTitleTags) {
       if (headTitle) headTitle.textContent = "제목태그";
@@ -2398,7 +2731,7 @@ ${actionButtonHTML}
         return;
       }
 
-      if (headTitle) headTitle.textContent = isTagPage() ? "태그설명 / 영상메모 / 태그 / 5P / 6P" : "설명 / 메모 / 기타 / 태그 / 5P / 6P";
+      if (headTitle) headTitle.textContent = isTagPage() ? "태그설명 / 영상메모 / 태그 / 재생목록" : "설명 / 메모 / 기타 / 태그 / 재생목록";
       const videoLikePage = isTagPage() || document.body?.dataset?.store?.startsWith("yt");
       titleEl.textContent = videoLikePage ? "재생중인 영상이 없어" : "재생중인 곡이 없어";
       if (tagEl) tagEl.innerHTML = "";

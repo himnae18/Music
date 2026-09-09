@@ -226,7 +226,15 @@
     const view = state.songs || [];
     const sourceIndexInView = findSongIndex(view, song, options.sourceIndex);
     const previousCurrentSong = view[state.current] || null;
+    const previousCurrentIndex = Number(state.current) || 0;
     const wasCurrent = sourceIndexInView >= 0 && sourceIndexInView === state.current;
+
+    // 3초 되돌리기용으로 이동 직전 상태를 보관한다.
+    const sourceSnapshot = sourcePlaylist
+      ? state.cleanSongArray(state.readCustomPlaylistSongs(sourcePlaylist))
+      : state.cleanSongArray(state.readStorage(sourceKey));
+    const targetSnapshot = state.cleanSongArray(state.readStorage(targetKey));
+    const viewSnapshot = state.cleanSongArray(view);
 
     const added = addToTarget(song, targetKey, sourcePlaylist);
     if (!added.ok) {
@@ -265,6 +273,26 @@
         : `${target.label}로 이동했어.${wasCurrent ? " 다음 영상을 재생해." : ""}`,
       added.duplicate ? "same" : "ok"
     );
+
+    window.showMoveUndoToast?.(() => {
+      try {
+        state.writeStorage(targetKey, targetSnapshot);
+        if (sourcePlaylist) state.writeCustomPlaylistSongs(sourcePlaylist, sourceSnapshot);
+        else state.writeStorage(sourceKey, sourceSnapshot);
+
+        state.songs = viewSnapshot;
+        state.current = Math.max(0, Math.min(previousCurrentIndex, Math.max(0, viewSnapshot.length - 1)));
+        window.showList?.();
+        window.updateLyricsDrawer?.();
+        window.updateControlLabels?.();
+        window.renderTagTools?.();
+        window.updateDrawerCounts?.();
+        updatePlaylistCountText();
+        setStatus("이동을 되돌렸어.", "ok");
+      } catch {
+        setStatus("되돌리지 못했어.", "error");
+      }
+    }, `${target.label}로 이동했어. 되돌릴까?`);
     return true;
   }
 

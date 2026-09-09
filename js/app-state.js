@@ -1959,6 +1959,320 @@ ${text}` : text;
     input.click();
   }
 
+
+  // =========================
+  // 메인 중복 영상 정리
+  // =========================
+  const DUPLICATE_PLAYLIST_NAME = "겹친재생목록";
+  const DUPLICATE_PLAYLIST_LABEL = "겹친 재생목록";
+  const DUPLICATE_SOURCE_OPTIONS = [
+    { id: "jaSongs", label: "🇯🇵 일본", kind: "store", key: "jaSongs" },
+    { id: "krSongs", label: "🇰🇷 한국", kind: "store", key: "krSongs" },
+    { id: "enSongs", label: "🇺🇸 영어", kind: "store", key: "enSongs" },
+    { id: "bgmSongs", label: "🎼 브금", kind: "store", key: "bgmSongs" },
+    { id: "yt1pVideos", label: "1P", kind: "store", key: "yt1pVideos" },
+    { id: "yt2pVideos", label: "2P", kind: "store", key: "yt2pVideos" },
+    { id: "yt3pVideos", label: "3P", kind: "store", key: "yt3pVideos" },
+    { id: "yt4pVideos", label: "4P", kind: "store", key: "yt4pVideos" },
+    { id: "yt5pVideos", label: "5P", kind: "store", key: "yt5pVideos" },
+    { id: "yt6pVideos", label: "6P", kind: "store", key: "yt6pVideos" },
+    { id: "customPlaylists", label: "📁 재생목록", kind: "playlists" }
+  ];
+
+  function duplicateVideoKey(song) {
+    const url = S.safeLink?.(song?.ytUrl || song?.sourceUrl || "") || "";
+    const id = S.safeText?.(song?.id || song?.sourceId || "") || S.extractID?.(url) || "";
+    if (id) return `id:${String(id).trim()}`;
+    if (url) return `url:${String(url).trim().toLowerCase()}`;
+    return "";
+  }
+
+  function selectedDuplicateCollections(selectedIds = []) {
+    const selected = new Set(selectedIds);
+    const collections = [];
+
+    DUPLICATE_SOURCE_OPTIONS.forEach((option) => {
+      if (!selected.has(option.id)) return;
+      if (option.kind === "store") {
+        collections.push({
+          kind: "store",
+          key: option.key,
+          label: option.label,
+          songs: S.cleanSongArray(S.readStorage(option.key))
+        });
+        return;
+      }
+
+      if (option.kind === "playlists") {
+        const playlists = typeof S.readCustomPlaylists === "function" ? S.readCustomPlaylists() : {};
+        Object.entries(playlists).forEach(([name, items]) => {
+          const cleanName = S.normalizeTag?.(name) || String(name || "").trim();
+          if (!cleanName || cleanName === DUPLICATE_PLAYLIST_NAME) return;
+          collections.push({
+            kind: "playlist",
+            key: cleanName,
+            playlistName: cleanName,
+            label: `재생목록 · ${cleanName}`,
+            songs: S.cleanSongArray(Array.isArray(items) ? items : [])
+          });
+        });
+      }
+    });
+
+    return collections;
+  }
+
+  function findDuplicateGroups(selectedIds = []) {
+    const collections = selectedDuplicateCollections(selectedIds);
+    const map = new Map();
+
+    collections.forEach((collection) => {
+      collection.songs.forEach((song, index) => {
+        const key = duplicateVideoKey(song);
+        if (!key) return;
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            title: S.safeText?.(song?.title) || "제목 없음",
+            sample: song,
+            occurrences: []
+          });
+        }
+        const group = map.get(key);
+        if ((!group.title || group.title === "제목 없음") && S.safeText?.(song?.title)) group.title = S.safeText(song.title);
+        group.occurrences.push({
+          kind: collection.kind,
+          key: collection.key,
+          playlistName: collection.playlistName || "",
+          label: collection.label,
+          index,
+          song
+        });
+      });
+    });
+
+    return [...map.values()]
+      .filter((group) => group.occurrences.length >= 2)
+      .sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "ko"));
+  }
+
+  function mergeDuplicateSongs(items = []) {
+    const songs = items.map((item) => S.cleanSong(item)).filter(Boolean);
+    if (!songs.length) return null;
+    const base = { ...songs[0] };
+
+    const longerFields = [
+      "lyrics", "lyricsOriginal", "lyricsPronunciation", "lyricsMeaning",
+      "lyricsJa", "lyricsCn", "lyricsKr", "lyricsEn", "memo"
+    ];
+    const fillFields = ["title", "author", "ytUrl", "id", "mr", "original", "score", "aspect"];
+
+    fillFields.forEach((field) => {
+      if (String(base[field] || "").trim()) return;
+      const found = songs.find((song) => String(song?.[field] || "").trim());
+      if (found) base[field] = found[field];
+    });
+
+    longerFields.forEach((field) => {
+      songs.forEach((song) => {
+        const current = String(base[field] || "");
+        const candidate = String(song?.[field] || "");
+        if (candidate.length > current.length) base[field] = candidate;
+      });
+    });
+
+    base.tags = S.normalizeTags(songs.flatMap((song) => S.normalizeTags(song?.tags)));
+    base.favorite = songs.some((song) => !!song?.favorite);
+    base.lastPlayedAt = Math.max(...songs.map((song) => Number(song?.lastPlayedAt || 0)));
+
+    const recent = [...songs].sort((a, b) => Number(b?.lastPlayedAt || 0) - Number(a?.lastPlayedAt || 0))[0];
+    if (recent) {
+      base.lastPosition = Number(recent.lastPosition || 0);
+      base.lastDuration = Number(recent.lastDuration || 0);
+    }
+
+    const addedTimes = songs.map((song) => Number(song?.addedAt || 0)).filter((n) => n > 0);
+    base.addedAt = addedTimes.length ? Math.min(...addedTimes) : Date.now();
+    return S.cleanSong(base);
+  }
+
+  function aggregateDuplicateLocations(group) {
+    const countMap = new Map();
+    group.occurrences.forEach((item) => {
+      countMap.set(item.label, (countMap.get(item.label) || 0) + 1);
+    });
+    return [...countMap.entries()].map(([label, count]) => count > 1 ? `${label} ×${count}` : label);
+  }
+
+  function performDuplicateCleanup(selectedIds = []) {
+    const groups = findDuplicateGroups(selectedIds);
+    if (!groups.length) return { ok: false, count: 0 };
+
+    const storeRemovals = new Map();
+    const playlistRemovals = new Map();
+    const duplicatePlaylist = typeof S.readCustomPlaylistSongs === "function"
+      ? S.readCustomPlaylistSongs(DUPLICATE_PLAYLIST_NAME)
+      : [];
+    const duplicateKeys = new Set(duplicatePlaylist.map(duplicateVideoKey).filter(Boolean));
+
+    groups.forEach((group) => {
+      const merged = mergeDuplicateSongs(group.occurrences.map((item) => item.song));
+      if (merged && !duplicateKeys.has(group.key)) {
+        merged.addedAt = Date.now();
+        duplicatePlaylist.push(merged);
+        duplicateKeys.add(group.key);
+      }
+
+      group.occurrences.forEach((item) => {
+        const targetMap = item.kind === "playlist" ? playlistRemovals : storeRemovals;
+        const targetKey = item.kind === "playlist" ? item.playlistName : item.key;
+        if (!targetMap.has(targetKey)) targetMap.set(targetKey, new Set());
+        targetMap.get(targetKey).add(item.index);
+      });
+    });
+
+    storeRemovals.forEach((indices, key) => {
+      const arr = S.cleanSongArray(S.readStorage(key));
+      const next = arr.filter((_, index) => !indices.has(index));
+      S.writeStorage(key, next);
+    });
+
+    playlistRemovals.forEach((indices, name) => {
+      const arr = S.cleanSongArray(S.readCustomPlaylistSongs(name));
+      const next = arr.filter((_, index) => !indices.has(index));
+      S.writeCustomPlaylistSongs(name, next);
+    });
+
+    S.registerPlaylistTag?.(DUPLICATE_PLAYLIST_NAME);
+    S.writeCustomPlaylistSongs?.(DUPLICATE_PLAYLIST_NAME, duplicatePlaylist);
+    window.updateDrawerCounts?.();
+    return { ok: true, count: groups.length, moved: groups };
+  }
+
+  function closeDuplicateCleanupModal() {
+    document.getElementById("duplicateCleanupModal")?.remove();
+  }
+
+  function openDuplicateCleanupModal() {
+    closeDuplicateCleanupModal();
+
+    const overlay = document.createElement("div");
+    overlay.id = "duplicateCleanupModal";
+    overlay.className = "duplicate-cleanup-overlay";
+    overlay.innerHTML = `
+      <div class="duplicate-cleanup-box" role="dialog" aria-modal="true" aria-labelledby="duplicateCleanupTitle">
+        <div class="duplicate-cleanup-header">
+          <div>
+            <h3 id="duplicateCleanupTitle">중복 영상 정리</h3>
+            <p>비교할 목록만 선택해줘. 같은 유튜브 영상만 중복으로 잡아.</p>
+          </div>
+          <button type="button" class="duplicate-cleanup-close" aria-label="닫기">×</button>
+        </div>
+
+        <div class="duplicate-cleanup-select-grid">
+          ${DUPLICATE_SOURCE_OPTIONS.map((item) => `
+            <label class="duplicate-cleanup-option">
+              <input type="checkbox" value="${escapeAttr(item.id)}" data-duplicate-source>
+              <span>${escapeHTML(item.label)}</span>
+            </label>
+          `).join("")}
+        </div>
+
+        <div class="duplicate-cleanup-quick-actions">
+          <button type="button" data-duplicate-select-all>전체 선택</button>
+          <button type="button" data-duplicate-select-none>전체 해제</button>
+        </div>
+
+        <div class="duplicate-cleanup-preview">
+          <p id="duplicateCleanupSummary" class="duplicate-cleanup-summary">비교할 목록을 선택하면 중복 영상이 여기에 보여.</p>
+          <div id="duplicateCleanupResults" class="duplicate-cleanup-results"></div>
+        </div>
+
+        <div class="duplicate-cleanup-note">
+          정리하면 겹치는 영상은 선택한 원래 목록들에서 빠지고 <b>${escapeHTML(DUPLICATE_PLAYLIST_LABEL)}</b>에 한 번만 모여.
+        </div>
+
+        <div class="duplicate-cleanup-actions">
+          <button type="button" class="duplicate-cleanup-cancel">취소</button>
+          <button type="button" id="duplicateCleanupRun" class="duplicate-cleanup-run" disabled>정리</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const getSelected = () => [...overlay.querySelectorAll("[data-duplicate-source]:checked")].map((el) => el.value);
+    const summary = overlay.querySelector("#duplicateCleanupSummary");
+    const results = overlay.querySelector("#duplicateCleanupResults");
+    const runBtn = overlay.querySelector("#duplicateCleanupRun");
+
+    const renderPreview = () => {
+      const selected = getSelected();
+      if (!selected.length) {
+        summary.textContent = "비교할 목록을 선택하면 중복 영상이 여기에 보여.";
+        results.innerHTML = "";
+        runBtn.disabled = true;
+        runBtn.textContent = "정리";
+        return;
+      }
+
+      const groups = findDuplicateGroups(selected);
+      if (!groups.length) {
+        summary.textContent = "선택한 목록 사이에 겹치는 영상이 없어.";
+        results.innerHTML = `<div class="duplicate-cleanup-empty">중복 없음</div>`;
+        runBtn.disabled = true;
+        runBtn.textContent = "정리";
+        return;
+      }
+
+      summary.textContent = `겹치는 영상 ${groups.length}개를 찾았어.`;
+      results.innerHTML = groups.map((group, index) => {
+        const locations = aggregateDuplicateLocations(group);
+        return `
+          <div class="duplicate-cleanup-item">
+            <div class="duplicate-cleanup-number">${index + 1}</div>
+            <div class="duplicate-cleanup-item-main">
+              <strong>${escapeHTML(group.title || "제목 없음")}</strong>
+              <div class="duplicate-cleanup-locations">
+                ${locations.map((label) => `<span>${escapeHTML(label)}</span>`).join("")}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+      runBtn.disabled = false;
+      runBtn.textContent = `${groups.length}개 정리`;
+    };
+
+    overlay.querySelectorAll("[data-duplicate-source]").forEach((checkbox) => checkbox.addEventListener("change", renderPreview));
+    overlay.querySelector("[data-duplicate-select-all]")?.addEventListener("click", () => {
+      overlay.querySelectorAll("[data-duplicate-source]").forEach((el) => { el.checked = true; });
+      renderPreview();
+    });
+    overlay.querySelector("[data-duplicate-select-none]")?.addEventListener("click", () => {
+      overlay.querySelectorAll("[data-duplicate-source]").forEach((el) => { el.checked = false; });
+      renderPreview();
+    });
+    overlay.querySelector(".duplicate-cleanup-close")?.addEventListener("click", closeDuplicateCleanupModal);
+    overlay.querySelector(".duplicate-cleanup-cancel")?.addEventListener("click", closeDuplicateCleanupModal);
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) closeDuplicateCleanupModal();
+    });
+    overlay.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeDuplicateCleanupModal();
+    });
+    runBtn?.addEventListener("click", () => {
+      const result = performDuplicateCleanup(getSelected());
+      if (!result.ok) {
+        renderPreview();
+        return;
+      }
+      closeDuplicateCleanupModal();
+      alert(`정리 완료!\n\n겹치는 영상 ${result.count}개를 원래 목록에서 빼고\n'${DUPLICATE_PLAYLIST_LABEL}'에 따로 모았어.`);
+    });
+
+    setTimeout(() => overlay.querySelector("[data-duplicate-source]")?.focus(), 0);
+  }
+
   function createBackupButtons() {
     if (document.getElementById("backupTools")) return;
     if (document.body?.dataset?.store || document.body?.dataset?.page === "tag") return; // 노래 재생 페이지/태그 재생 페이지에는 저장/불러오기 박스를 띄우지 않음
@@ -1969,7 +2283,8 @@ ${text}` : text;
     box.innerHTML = `
       <button id="exportBackupBtn" class="backup-btn" type="button">💾 저장</button>
       <button id="importBackupBtn" class="backup-btn" type="button">📂 불러오기</button>
-      <p class="backup-help">저장은 JSON 파일로 다운로드되고, 불러오기는 그 파일을 다시 넣는 방식이야. 노래 페이지와 유튜브 1P~6P도 같이 저장돼.</p>
+      <button id="duplicateCleanupBtn" class="backup-btn duplicate-cleanup-open-btn" type="button">🧹 정리</button>
+      <p class="backup-help">저장은 JSON 파일로 다운로드되고, 불러오기는 그 파일을 다시 넣는 방식이야. 정리는 선택한 목록끼리 겹치는 영상을 찾아 따로 모아줘.</p>
     `;
 
     const mainContent = document.getElementById("mainContent");
@@ -1979,6 +2294,7 @@ ${text}` : text;
 
     document.getElementById("exportBackupBtn")?.addEventListener("click", downloadBackup);
     document.getElementById("importBackupBtn")?.addEventListener("click", openImportFilePicker);
+    document.getElementById("duplicateCleanupBtn")?.addEventListener("click", openDuplicateCleanupModal);
   }
 
   function isMainHomePage() {

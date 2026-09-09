@@ -200,11 +200,11 @@
           노래
         </button>
         <div id="drawerSongGroup" class="drawer-link-group open">
-          <a class="drawer-menu-link" href="${pre}japan/jaindex.html"><span>일본어</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}china/cnindex.html"><span>중국어</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}korea/krindex.html"><span>한국어</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}english/enindex.html"><span>영어</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}bgm/bgmindex.html"><span>브금</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}japan/jaindex.html" data-side-drop-store="jaSongs"><span>일본어</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}china/cnindex.html" data-side-drop-store="cnSongs"><span>중국어</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}korea/krindex.html" data-side-drop-store="krSongs"><span>한국어</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}english/enindex.html" data-side-drop-store="enSongs"><span>영어</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}bgm/bgmindex.html" data-side-drop-store="bgmSongs"><span>브금</span><span>›</span></a>
         </div>
       </div>
 
@@ -215,12 +215,12 @@
           유튜브 영상
         </button>
         <div id="drawerYoutubeGroup" class="drawer-link-group open">
-          <a class="drawer-menu-link" href="${pre}youtube/1p.html"><span>1P</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}youtube/2p.html"><span>2P</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}youtube/3p.html"><span>3P</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}youtube/4p.html"><span>4P</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}youtube/5p.html"><span>5P</span><span>›</span></a>
-          <a class="drawer-menu-link" href="${pre}youtube/6p.html"><span>6P</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}youtube/1p.html" data-side-drop-store="yt1pVideos"><span>1P</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}youtube/2p.html" data-side-drop-store="yt2pVideos"><span>2P</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}youtube/3p.html" data-side-drop-store="yt3pVideos"><span>3P</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}youtube/4p.html" data-side-drop-store="yt4pVideos"><span>4P</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}youtube/5p.html" data-side-drop-store="yt5pVideos"><span>5P</span><span>›</span></a>
+          <a class="drawer-menu-link" href="${pre}youtube/6p.html" data-side-drop-store="yt6pVideos"><span>6P</span><span>›</span></a>
         </div>
       </div>
 
