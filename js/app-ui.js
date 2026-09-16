@@ -573,6 +573,270 @@
     window.updateDrawerCounts?.();
   }
 
+  // 재생목록 영상 우클릭 관리창: 일반 태그 / 제목태그 / 번호 이동을 한 번에 처리한다.
+  let playlistManageTarget = null;
+  let playlistManageSelectedTitleTags = new Set();
+
+  function resolvePlaylistManageContext() {
+    if (!playlistManageTarget) return null;
+
+    if (playlistManageTarget.kind === "main") {
+      const items = S.songs || [];
+      let index = Number(playlistManageTarget.index);
+      const probe = playlistManageTarget.song || null;
+      if (!Number.isInteger(index) || !items[index] || (probe && !sideSameVideo(items[index], probe))) {
+        index = probe ? items.findIndex((item) => sideSameVideo(item, probe)) : -1;
+      }
+      if (index < 0 || !items[index]) return null;
+      return { kind: "main", items, index, song: items[index], collection: currentSideTarget() };
+    }
+
+    if (playlistManageTarget.kind === "side") {
+      const collection = sideCollectionById(playlistManageTarget.collectionId);
+      if (!collection) return null;
+      const items = S.cleanSongArray(sideSongs(collection));
+      let index = Number(playlistManageTarget.index);
+      const probe = playlistManageTarget.song || null;
+      if (!Number.isInteger(index) || !items[index] || (probe && !sideSameVideo(items[index], probe))) {
+        index = probe ? items.findIndex((item) => sideSameVideo(item, probe)) : -1;
+      }
+      if (index < 0 || !items[index]) return null;
+      return { kind: "side", items, index, song: items[index], collection };
+    }
+
+    return null;
+  }
+
+  function closePlaylistItemManager() {
+    document.getElementById("playlistItemManagerModal")?.classList.remove("open");
+    playlistManageTarget = null;
+    playlistManageSelectedTitleTags = new Set();
+  }
+
+  function renderPlaylistManagerTitleTags(filterText = "") {
+    const box = document.getElementById("playlistManagerRegisteredTitleTags");
+    if (!box) return;
+    const needle = S.normalizeSearchText ? S.normalizeSearchText(filterText) : String(filterText || "").toLowerCase().replace(/\s+/g, "");
+    const titleTags = typeof S.readTitleTags === "function" ? S.readTitleTags() : [];
+    const visible = titleTags.filter((tag) => {
+      if (!needle) return true;
+      const hay = S.normalizeSearchText ? S.normalizeSearchText(tag) : String(tag || "").toLowerCase().replace(/\s+/g, "");
+      return hay.includes(needle);
+    });
+
+    box.innerHTML = visible.length ? visible.map((tag) => {
+      const selected = playlistManageSelectedTitleTags.has(tag);
+      return `<button type="button" class="playlist-manager-title-chip${selected ? " is-selected" : ""}" data-playlist-title-tag="${S.escapeHTML(tag)}" aria-pressed="${selected ? "true" : "false"}">#${S.escapeHTML(tag)}</button>`;
+    }).join("") : `<span class="playlist-manager-empty">${titleTags.length ? "검색되는 제목태그가 없어." : "아직 등록된 제목태그가 없어."}</span>`;
+
+    box.querySelectorAll("[data-playlist-title-tag]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const tag = S.normalizeTag(button.getAttribute("data-playlist-title-tag") || "");
+        if (!tag) return;
+        if (playlistManageSelectedTitleTags.has(tag)) playlistManageSelectedTitleTags.delete(tag);
+        else playlistManageSelectedTitleTags.add(tag);
+        renderPlaylistManagerTitleTags(document.getElementById("playlistManagerTitleSearch")?.value || "");
+      });
+    });
+  }
+
+  function ensurePlaylistItemManagerModal() {
+    let modal = document.getElementById("playlistItemManagerModal");
+    if (modal) return modal;
+
+    modal = document.createElement("div");
+    modal.id = "playlistItemManagerModal";
+    modal.className = "modal-overlay playlist-item-manager-modal";
+    modal.innerHTML = `
+      <div class="modal-box playlist-item-manager-box" onclick="event.stopPropagation();">
+        <div class="playlist-manager-head">
+          <div>
+            <h2>재생목록 영상 관리</h2>
+            <p id="playlistManagerSongTitle" class="playlist-manager-song-title"></p>
+          </div>
+          <button id="playlistManagerCloseX" class="playlist-manager-close-x" type="button" aria-label="닫기">×</button>
+        </div>
+
+        <label class="playlist-manager-field">
+          <span>태그</span>
+          <input id="playlistManagerTags" placeholder="예: 일본어, 밝은곡, 참고용" autocomplete="off">
+          <small>일반 태그를 쉼표나 띄어쓰기로 여러 개 넣을 수 있어.</small>
+        </label>
+
+        <label class="playlist-manager-field">
+          <span>새 제목태그</span>
+          <input id="playlistManagerNewTitleTags" placeholder="새 제목태그 직접 입력" autocomplete="off">
+          <small>여기에 적고 저장하면 제목태그로 새로 등록돼.</small>
+        </label>
+
+        <section class="playlist-manager-title-section">
+          <div class="playlist-manager-title-head">
+            <strong>등록된 제목태그</strong>
+            <input id="playlistManagerTitleSearch" placeholder="제목태그 검색" autocomplete="off">
+          </div>
+          <div id="playlistManagerRegisteredTitleTags" class="playlist-manager-title-grid"></div>
+        </section>
+
+        <label class="playlist-manager-field playlist-manager-move-field">
+          <span>목록 위치</span>
+          <div class="playlist-manager-move-row">
+            <input id="playlistManagerMoveNumber" type="number" min="1" step="1" inputmode="numeric" autocomplete="off">
+            <b id="playlistManagerMoveRange"></b>
+          </div>
+          <small>원하는 번호를 적으면 그 위치로 바로 이동해.</small>
+        </label>
+
+        <p id="playlistManagerError" class="playlist-manager-error" aria-live="polite"></p>
+        <div class="modal-actions playlist-manager-actions">
+          <button id="playlistManagerSave" class="download-link-btn" type="button">적용</button>
+          <button id="playlistManagerCancel" class="download-link-btn video-close-btn" type="button">취소</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.addEventListener("click", closePlaylistItemManager);
+    modal.querySelector("#playlistManagerCloseX")?.addEventListener("click", closePlaylistItemManager);
+    modal.querySelector("#playlistManagerCancel")?.addEventListener("click", closePlaylistItemManager);
+    modal.querySelector("#playlistManagerTitleSearch")?.addEventListener("input", (e) => renderPlaylistManagerTitleTags(e.target.value || ""));
+    modal.querySelector("#playlistManagerSave")?.addEventListener("click", savePlaylistItemManager);
+    modal.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePlaylistItemManager();
+      } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        savePlaylistItemManager();
+      }
+    });
+    return modal;
+  }
+
+  function openPlaylistItemManager(target) {
+    playlistManageTarget = target || null;
+    const context = resolvePlaylistManageContext();
+    if (!context) {
+      playlistManageTarget = null;
+      alert("선택한 영상을 찾지 못했어.");
+      return;
+    }
+
+    const modal = ensurePlaylistItemManagerModal();
+    const titleTags = typeof S.readTitleTags === "function" ? S.readTitleTags() : [];
+    const titleSet = new Set(titleTags);
+    const songTags = S.normalizeTags(context.song?.tags);
+    playlistManageSelectedTitleTags = new Set(songTags.filter((tag) => titleSet.has(tag)));
+    const regularTags = songTags.filter((tag) => !titleSet.has(tag));
+
+    const titleEl = modal.querySelector("#playlistManagerSongTitle");
+    const tagsInput = modal.querySelector("#playlistManagerTags");
+    const newTitleInput = modal.querySelector("#playlistManagerNewTitleTags");
+    const searchInput = modal.querySelector("#playlistManagerTitleSearch");
+    const moveInput = modal.querySelector("#playlistManagerMoveNumber");
+    const moveRange = modal.querySelector("#playlistManagerMoveRange");
+    const error = modal.querySelector("#playlistManagerError");
+
+    if (titleEl) titleEl.textContent = context.song?.title || "제목 없음";
+    if (tagsInput) tagsInput.value = regularTags.join(", ");
+    if (newTitleInput) newTitleInput.value = "";
+    if (searchInput) searchInput.value = "";
+    if (moveInput) {
+      moveInput.max = String(context.items.length);
+      moveInput.value = String(context.index + 1);
+    }
+    if (moveRange) moveRange.textContent = `/ ${context.items.length}`;
+    if (error) error.textContent = "";
+
+    S.attachTagAutocomplete?.(tagsInput);
+    renderPlaylistManagerTitleTags("");
+    modal.classList.add("open");
+    setTimeout(() => tagsInput?.focus(), 0);
+  }
+
+  function openPlaylistItemManagerForMain(index) {
+    const song = S.songs?.[Number(index)] || null;
+    if (!song) return;
+    openPlaylistItemManager({ kind: "main", index: Number(index), song: S.cleanSong(song) });
+  }
+
+  function openPlaylistItemManagerForSide(collection, index) {
+    const items = sideSongs(collection);
+    const song = items?.[Number(index)] || null;
+    if (!collection || !song) return;
+    openPlaylistItemManager({ kind: "side", collectionId: collection.id, index: Number(index), song: S.cleanSong(song) });
+  }
+
+  function savePlaylistItemManager() {
+    const context = resolvePlaylistManageContext();
+    const error = document.getElementById("playlistManagerError");
+    if (!context) {
+      if (error) error.textContent = "영상을 다시 찾지 못했어. 창을 닫고 다시 우클릭해줘.";
+      return;
+    }
+
+    const moveInput = document.getElementById("playlistManagerMoveNumber");
+    const targetNumber = Number(String(moveInput?.value || "").trim());
+    if (!Number.isInteger(targetNumber) || targetNumber < 1 || targetNumber > context.items.length) {
+      if (error) error.textContent = `이동 번호는 1부터 ${context.items.length} 사이로 적어줘.`;
+      moveInput?.focus();
+      moveInput?.select();
+      return;
+    }
+
+    const regularTags = S.normalizeTags(document.getElementById("playlistManagerTags")?.value || "");
+    const newTitleTags = S.normalizeTags(document.getElementById("playlistManagerNewTitleTags")?.value || "");
+    newTitleTags.forEach((tag) => S.registerTitleTag?.(tag));
+    const chosenTitleTags = S.normalizeTags([...playlistManageSelectedTitleTags, ...newTitleTags]);
+    S.ensureTagKinds?.(regularTags, "song");
+
+    const nextTags = S.applyTitleFixedTagsToTags
+      ? S.applyTitleFixedTagsToTags(S.addTags(regularTags, chosenTitleTags))
+      : S.addTags(regularTags, chosenTitleTags);
+
+    const items = context.items;
+    const previouslyCurrent = context.kind === "main" ? (S.songs?.[S.current] || null) : null;
+    const editedSong = items[context.index];
+    editedSong.tags = nextTags;
+
+    const originalIndex = context.index;
+    let finalIndex = originalIndex;
+    if (originalIndex !== targetNumber - 1) {
+      const movedSong = items.splice(originalIndex, 1)[0];
+      const insertIndex = Math.max(0, Math.min(targetNumber - 1, items.length));
+      if (context.kind === "main") {
+        const joinTitleTag = getQuickMoveJoinTitleTag(items, insertIndex);
+        if (joinTitleTag) applyDuplicateTitleTag(movedSong, joinTitleTag);
+      }
+      items.splice(insertIndex, 0, movedSong);
+      finalIndex = insertIndex;
+    }
+
+    if (context.kind === "main") {
+      if (originalIndex !== targetNumber - 1 && pageSortMode !== "manual") {
+        pageSortMode = "manual";
+        localStorage.setItem(pageSortStorageKey, pageSortMode);
+      }
+      if (previouslyCurrent) {
+        const nextCurrent = items.indexOf(previouslyCurrent);
+        if (nextCurrent >= 0) S.current = nextCurrent;
+      }
+      S.save();
+      showList();
+      updateLyricsDrawer();
+      renderTagTools();
+      requestAnimationFrame(() => {
+        document.querySelectorAll(".pl-item")[finalIndex]?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+      });
+    } else {
+      writeSideSongs(context.collection, items);
+      sideNotice = `${context.collection?.label || "재생목록"} 영상 정보를 저장했어.`;
+      updateLyricsDrawer();
+      renderTagTools();
+    }
+
+    closePlaylistItemManager();
+  }
+
   function copySideSong(song, target) {
     if (!target) { sideNotice = '추가할 일본·영어·1~6P 또는 재생목록 페이지를 먼저 열어줘.'; updateLyricsDrawer(); return false; }
     const clean = S.cleanSong(song);
@@ -585,8 +849,12 @@
     }
     try {
       writeSideSongs(target, [...items, clean]);
-      sideNotice = `${target.label}에 추가했어.`;
-    } catch { sideNotice = '저장하지 못했어. 저장 공간을 확인하고 다시 시도해줘.'; }
+      sideNotice = `${target.label}에 복사했어. 원래 목록에도 그대로 남아 있어.`;
+    } catch {
+      sideNotice = '저장하지 못했어. 저장 공간을 확인하고 다시 시도해줘.';
+      updateLyricsDrawer();
+      return false;
+    }
     updateLyricsDrawer();
     return true;
   }
@@ -760,7 +1028,7 @@
     textEl.style.display = 'none';
     mediaEl.style.display = 'block';
     mediaEl.innerHTML = `<section class="side-playlist-panel fivep-panel">
-      <p class="fivep-help">넣기 버튼을 누르면 ${S.escapeHTML(target?.label || '현재 페이지')}로 이동되고 원래 목록에서는 사라져. 영상을 왼쪽 메뉴의 1P·2P·3P·4P나 원하는 재생목록 위로 끌어도 똑같이 이동돼. 이동 후 3초 동안 되돌릴 수 있어.</p>
+      <p class="fivep-help">복사는 원래 목록에 남겨둔 채 현재 페이지에 추가하고, 넣기는 원래 목록에서 빼고 이동해. 넣기 버튼을 누르면 ${S.escapeHTML(target?.label || '현재 페이지')}로 이동되고 원래 목록에서는 사라져. 영상을 왼쪽 메뉴의 1P·2P·3P·4P나 원하는 재생목록 위로 끌어도 똑같이 이동돼. 이동 후 3초 동안 되돌릴 수 있어.</p>
       <a class="fivep-open-page" href="${S.escapeHTML(collection.href)}">${S.escapeHTML(collection.label)} 페이지 열기</a>
       <p class="side-playlist-status" role="status">${S.escapeHTML(sideNotice)}</p>
       <div class="fivep-video-list">${items.map((song,index) => {
@@ -768,17 +1036,28 @@
         return `<article class="fivep-video-card" draggable="true" data-side-index="${index}">
           <div class="fivep-thumb">${id ? `<img loading="lazy" draggable="false" src="https://i.ytimg.com/vi/${encodeURIComponent(id)}/hqdefault.jpg" alt="">` : ''}</div>
           <div class="fivep-meta"><strong>${S.escapeHTML(song.title || '제목 없음')}</strong><span>${S.escapeHTML(song.author || '')}</span></div>
-          <button type="button" class="fivep-add-btn" ${!target || target.id === collection.id ? 'disabled' : ''}>${target?.id === collection.id ? '현재' : '넣기'}</button>
+          <div class="side-song-actions">
+            <button type="button" class="fivep-add-btn side-copy-btn" data-side-copy title="현재 페이지에 복사 (원래 목록 유지)" ${!target || target.id === collection.id ? 'disabled' : ''}>복사</button>
+            <button type="button" class="fivep-add-btn" data-side-move title="현재 페이지로 이동 (원래 목록에서 제거)" ${!target || target.id === collection.id ? 'disabled' : ''}>${target?.id === collection.id ? '현재' : '넣기'}</button>
+          </div>
         </article>`;
       }).join('') || '<p class="fivep-help">아직 영상이 없어. 현재 페이지의 영상을 여기로 끌어 추가해줘.</p>'}</div>
     </section>`;
     mediaEl.querySelectorAll('[data-side-index]').forEach(card => {
       const song = items[Number(card.dataset.sideIndex)];
+      card.addEventListener('contextmenu', event => {
+        event.preventDefault();
+        event.stopPropagation();
+        openPlaylistItemManagerForSide(collection, Number(card.dataset.sideIndex));
+      });
       card.addEventListener('dragstart', event => {
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData(SIDE_MIME, JSON.stringify(makeSideDragPayload(song, collection, Number(card.dataset.sideIndex))));
       });
-      card.querySelector('button').addEventListener('click', () => {
+      card.querySelector('[data-side-copy]').addEventListener('click', () => {
+        copySideSong(song, currentSideTarget());
+      });
+      card.querySelector('[data-side-move]').addEventListener('click', () => {
         moveSideSong(makeSideDragPayload(song, collection, Number(card.dataset.sideIndex)), currentSideTarget());
       });
     });
@@ -1879,7 +2158,8 @@
       return `
         <div class="pl-item${active}${lyricsStatusClass}${rowClass}"
           ${dragAttributes}
-          onclick="play(${i})">
+          onclick="play(${i})"
+          oncontextmenu="event.preventDefault(); event.stopPropagation(); openPlaylistItemManagerForMain(${i}); return false;">
 
           <div class="pl-left">
             <div class="pl-index">${displayIndex}</div>
@@ -3540,6 +3820,9 @@ ${actionButtonHTML}
     updatePageSearchSummary();
   });
 
+  window.openPlaylistItemManagerForMain = openPlaylistItemManagerForMain;
+  window.openPlaylistItemManagerForSide = openPlaylistItemManagerForSide;
+  window.closePlaylistItemManager = closePlaylistItemManager;
   window.openQuickMoveModal = openQuickMoveModal;
   window.closeQuickMoveModal = closeQuickMoveModal;
   window.moveCurrentSongToNumber = moveCurrentSongToNumber;

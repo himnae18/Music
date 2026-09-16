@@ -706,6 +706,151 @@ body[data-store="cnSongs"] .lyrics-tabs .tab-link{
 @keyframes modalPop{ from{ transform:scale(0.95); opacity:0; } to{ transform:scale(1); opacity:1; } }
 
 
+/* 재생목록 영상 우클릭 관리창 */
+.playlist-item-manager-box{
+  width:min(620px, 95%);
+  max-height:min(820px, 92vh);
+  overflow:auto;
+  text-align:left;
+  padding:22px;
+}
+.playlist-manager-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  margin-bottom:16px;
+}
+.playlist-manager-head h2{
+  margin:0 0 5px;
+  font-size:22px;
+}
+.playlist-manager-song-title{
+  margin:0;
+  color:#666;
+  font-size:14px;
+  font-weight:700;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:500px;
+}
+.playlist-manager-close-x{
+  width:34px;
+  height:34px;
+  flex:0 0 34px;
+  border:0;
+  border-radius:10px;
+  background:#f1f1f4;
+  font-size:24px;
+  line-height:1;
+  cursor:pointer;
+}
+.playlist-manager-field{
+  display:block;
+  margin:0 0 15px;
+}
+.playlist-manager-field > span,
+.playlist-manager-title-head strong{
+  display:block;
+  margin-bottom:7px;
+  font-size:14px;
+  font-weight:800;
+}
+.playlist-manager-field input,
+.playlist-manager-title-head input{
+  box-sizing:border-box;
+  height:44px;
+  border:1px solid #d7d7df;
+  border-radius:10px;
+  padding:0 12px;
+  outline:none;
+  background:#fff;
+}
+.playlist-manager-field input:focus,
+.playlist-manager-title-head input:focus{
+  border-color:#777;
+  box-shadow:0 0 0 3px rgba(0,0,0,0.05);
+}
+.playlist-manager-field small{
+  display:block;
+  margin-top:5px;
+  color:#777;
+  font-size:12px;
+  line-height:1.45;
+}
+.playlist-manager-title-section{
+  margin:0 0 16px;
+  padding:13px;
+  border:1px solid #e2e2e8;
+  border-radius:12px;
+  background:#fafafd;
+}
+.playlist-manager-title-head{
+  display:grid;
+  grid-template-columns:1fr minmax(160px, 230px);
+  align-items:center;
+  gap:10px;
+  margin-bottom:10px;
+}
+.playlist-manager-title-head strong{ margin:0; }
+.playlist-manager-title-grid{
+  display:flex;
+  flex-wrap:wrap;
+  gap:7px;
+  max-height:190px;
+  overflow:auto;
+  padding:2px;
+}
+.playlist-manager-title-chip{
+  border:1px solid #d4d4dc;
+  border-radius:999px;
+  padding:7px 10px;
+  background:#fff;
+  color:#444;
+  font-size:13px;
+  cursor:pointer;
+}
+.playlist-manager-title-chip.is-selected{
+  border-color:#555;
+  background:#222;
+  color:#fff;
+  font-weight:800;
+}
+.playlist-manager-empty{
+  color:#888;
+  font-size:13px;
+}
+.playlist-manager-move-row{
+  display:grid;
+  grid-template-columns:minmax(0, 1fr) auto;
+  align-items:center;
+  gap:10px;
+}
+.playlist-manager-move-row input{
+  font-size:20px;
+  font-weight:800;
+  text-align:center;
+}
+.playlist-manager-move-row b{
+  min-width:54px;
+  color:#666;
+  font-size:14px;
+}
+.playlist-manager-error{
+  min-height:20px;
+  margin:0 0 4px;
+  color:#c7334f;
+  font-size:13px;
+}
+.playlist-manager-actions{
+  justify-content:flex-end;
+  margin-top:4px;
+}
+.fivep-video-card{ cursor:default; }
+.fivep-video-card:hover,
+.pl-item:hover{ }
+
 /* Ctrl+Q 빠른 번호 이동 */
 .quick-move-box{
   width:min(390px, 94%);
@@ -5028,3 +5173,9 @@ body[data-store="bgmSongs"] .duplicate-group-main{
   .duplicate-cleanup-note{ margin-left:14px; margin-right:14px; }
   .duplicate-cleanup-actions{ padding-left:14px; padding-right:14px; }
 }
+
+/* Keep copy and move beside one another without adding a grid column. */
+.side-song-actions { display:flex; align-items:center; gap:4px; }
+.side-playlist-panel .side-song-actions .fivep-add-btn { min-width:42px; padding:0 8px; white-space:nowrap; }
+.side-playlist-panel .side-copy-btn { background:#b72346; }
+.side-playlist-panel .side-copy-btn:disabled { background:#ddd; color:#666; }
