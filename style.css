@@ -5179,3 +5179,13 @@ body[data-store="bgmSongs"] .duplicate-group-main{
 .side-playlist-panel .side-song-actions .fivep-add-btn { min-width:42px; padding:0 8px; white-space:nowrap; }
 .side-playlist-panel .side-copy-btn { background:#b72346; }
 .side-playlist-panel .side-copy-btn:disabled { background:#ddd; color:#666; }
+
+/* Playlist input always precedes the single-video input. */
+.playlist-import-box { margin-bottom: 10px; min-width: 0; }
+.playlist-import-row { display:flex; align-items:end; gap:8px; }
+.playlist-import-row label { flex:1; min-width:0; font-size:14px; font-weight:800; }
+.playlist-import-row input { width:100%; box-sizing:border-box; margin:6px 0 0; }
+.playlist-import-row button { flex-shrink:0; height:42px; margin:0; }
+.playlist-import-status { font-size:12px; line-height:1.5; margin:6px 0 0; overflow-wrap:anywhere; }
+.playlist-import-status:empty, .playlist-import-preview:empty { display:none; }
+.playlist-import-preview { margin-top:8px; min-width:200px; }
