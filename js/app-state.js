@@ -158,10 +158,36 @@
   }
 
   function songMatchesSearch(song, query) {
-    const terms = getSearchTerms(query);
-    if (!terms.length) return true;
+    const rawTokens = String(query ?? "").match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+    if (!rawTokens.length) return true;
+
     const haystack = makeSongSearchHaystack(song);
-    return terms.every((term) => haystack.includes(term));
+    const tags = normalizeTags(song?.tags).map(normalizeSearchText);
+    const author = normalizeSearchText(song?.author || "");
+    const title = normalizeSearchText(song?.title || "");
+    const actualStoreKey = String(song?.sourceKey || song?.storeKey || song?.collection?.key || song?.country?.key || storeKey || "");
+    const store = ALL_STORES.find((item) => item.key === actualStoreKey);
+    const pageText = normalizeSearchText([actualStoreKey, store?.label, song?.collection?.label, song?.country?.label].filter(Boolean).join(" "));
+
+    return rawTokens.every((rawToken) => {
+      const token = String(rawToken || "").replace(/^"|"$/g, "");
+      const colon = token.indexOf(":");
+      if (token.startsWith("#")) {
+        const wanted = normalizeSearchText(token.slice(1));
+        return !!wanted && tags.some((tag) => tag.includes(wanted));
+      }
+      if (colon > 0) {
+        const prefix = normalizeSearchText(token.slice(0, colon));
+        const value = normalizeSearchText(token.slice(colon + 1));
+        if (!value) return true;
+        if (["채널", "channel", "가수", "author"].includes(prefix)) return author.includes(value);
+        if (["제목", "title"].includes(prefix)) return title.includes(value);
+        if (["페이지", "page", "목록"].includes(prefix)) return pageText.includes(value);
+        if (["태그", "tag"].includes(prefix)) return tags.some((tag) => tag.includes(value));
+      }
+      const term = normalizeSearchText(token);
+      return !!term && haystack.includes(term);
+    });
   }
 
   function searchSongs(query, scopeKey = "all") {
@@ -291,8 +317,24 @@ ${text}` : text;
         ytUrl: safeLink(item?.ytUrl || item?.url || ""),
         id: String(item?.id || extractID(item?.ytUrl || item?.url || "") || ""),
         lyrics: String(item?.lyrics || ""),
+        lyricsOriginal: String(item?.lyricsOriginal || ""),
+        lyricsPronunciation: String(item?.lyricsPronunciation || ""),
+        lyricsMeaning: String(item?.lyricsMeaning || ""),
+        lyricsJa: String(item?.lyricsJa || ""),
+        lyricsCn: String(item?.lyricsCn || ""),
+        lyricsKr: String(item?.lyricsKr || ""),
+        lyricsEn: String(item?.lyricsEn || ""),
         memo: String(item?.memo || ""),
         original: String(item?.original || ""),
+        mr: String(item?.mr || ""),
+        score: String(item?.score || ""),
+        favorite: !!item?.favorite,
+        pinned: !!item?.pinned,
+        createdAt: Number(item?.createdAt || item?.addedAt || 0) || 0,
+        addedAt: Number(item?.addedAt || item?.createdAt || 0) || 0,
+        aspect: normalizeVideoAspect(item?.aspect || ""),
+        thumbnailWidth: Number(item?.thumbnailWidth || 0) || 0,
+        thumbnailHeight: Number(item?.thumbnailHeight || 0) || 0,
         tags: normalizeTags(item?.tags),
         primaryTag: normalizeTag(item?.primaryTag || ""),
         sourceStoreKey: String(item?.sourceStoreKey || ""),
@@ -311,8 +353,24 @@ ${text}` : text;
       ytUrl: safeLink(item?.ytUrl || item?.url || ""),
       id: String(item?.id || extractID(item?.ytUrl || item?.url || "") || ""),
       lyrics: String(item?.lyrics || ""),
+      lyricsOriginal: String(item?.lyricsOriginal || ""),
+      lyricsPronunciation: String(item?.lyricsPronunciation || ""),
+      lyricsMeaning: String(item?.lyricsMeaning || ""),
+      lyricsJa: String(item?.lyricsJa || ""),
+      lyricsCn: String(item?.lyricsCn || ""),
+      lyricsKr: String(item?.lyricsKr || ""),
+      lyricsEn: String(item?.lyricsEn || ""),
       memo: String(item?.memo || ""),
       original: String(item?.original || ""),
+      mr: String(item?.mr || ""),
+      score: String(item?.score || ""),
+      favorite: !!item?.favorite,
+      pinned: !!item?.pinned,
+      createdAt: Number(item?.createdAt || item?.addedAt || 0) || 0,
+      addedAt: Number(item?.addedAt || item?.createdAt || 0) || 0,
+      aspect: normalizeVideoAspect(item?.aspect || ""),
+      thumbnailWidth: Number(item?.thumbnailWidth || 0) || 0,
+      thumbnailHeight: Number(item?.thumbnailHeight || 0) || 0,
       tags: normalizeTags(item?.tags),
       primaryTag: normalizeTag(item?.primaryTag || ""),
       sourceStoreKey: String(item?.sourceStoreKey || ""),
@@ -385,6 +443,49 @@ ${text}` : text;
 
     if (firstTag) appendTagSharedDescription(firstTag, buildTagArchiveDescriptionBlock(record));
     return record;
+  }
+
+  function removedArchiveRecordKey(record) {
+    const id = String(record?.id || extractID(record?.ytUrl || "") || "");
+    return `${id}|${String(record?.removedAt || "")}`;
+  }
+
+  function restoreRemovedVideoRecord(record, options = {}) {
+    if (!record) return { ok: false, error: "복원할 영상이 없어." };
+    const wantedKey = String(options.targetStoreKey || record.sourceStoreKey || "yt1pVideos");
+    const targetStore = ALL_STORES.find((item) => item.key === wantedKey) || YOUTUBE_STORES[0];
+    if (!targetStore) return { ok: false, error: "복원할 위치를 찾지 못했어." };
+
+    const arr = cleanSongArray(readStorage(targetStore.key));
+    const id = String(record?.id || extractID(record?.ytUrl || "") || "");
+    const url = safeLink(record?.ytUrl || "");
+    const duplicateIndex = arr.findIndex((item) => {
+      const itemId = String(item?.id || extractID(item?.ytUrl || "") || "");
+      return !!((id && itemId === id) || (url && safeLink(item?.ytUrl) === url));
+    });
+
+    window.AppEnhancements?.beginMutation?.("보관 영상 복원");
+    let index = duplicateIndex;
+    let duplicate = duplicateIndex >= 0;
+    if (!duplicate) {
+      const restored = cleanSong({
+        ...record,
+        createdAt: Number(record?.createdAt || record?.addedAt || 0) || Date.now(),
+        addedAt: Number(record?.addedAt || record?.createdAt || 0) || Date.now()
+      });
+      if (!restored) return { ok: false, error: "영상 데이터를 복원하지 못했어." };
+      const preferred = options.keepOriginalPosition === false ? arr.length : Number(record?.sourceIndex);
+      index = Number.isInteger(preferred) && preferred >= 0 ? Math.min(preferred, arr.length) : arr.length;
+      arr.splice(index, 0, restored);
+      writeStorage(targetStore.key, arr);
+      if (targetStore.key === "jaSongs") syncJapanSongToPlaylists(restored);
+    }
+
+    const key = removedArchiveRecordKey(record);
+    const nextArchive = readRemovedVideoArchive().filter((item) => removedArchiveRecordKey(item) !== key);
+    writeRemovedVideoArchive(nextArchive);
+    window.AppEnhancements?.commitMutation?.("보관 영상 복원");
+    return { ok: true, duplicate, storeKey: targetStore.key, store: targetStore, index };
   }
 
   function renameTagEverywhere(oldTag, newTag) {
@@ -1223,7 +1324,9 @@ ${text}` : text;
       memo: String(song.memo || ""),
       tags: cleanTags,
       favorite: song.favorite === true || song.favorite === 1 || song.favorite === "true",
-      addedAt: Number(song.addedAt || 0) || 0,
+      pinned: song.pinned === true || song.pinned === 1 || song.pinned === "true",
+      createdAt: Number(song.createdAt || song.addedAt || 0) || 0,
+      addedAt: Number(song.addedAt || song.createdAt || 0) || 0,
       lastPlayedAt: Number(song.lastPlayedAt || 0) || 0,
       lastPosition: Math.max(0, Number(song.lastPosition || 0) || 0),
       lastDuration: Math.max(0, Number(song.lastDuration || 0) || 0),
@@ -1453,6 +1556,82 @@ ${text}` : text;
     return result;
   }
 
+  function duplicateLocationLabel(item) {
+    const label = safeText(item?.store?.label) || ALL_STORES.find((store) => store.key === item?.storeKey)?.label || safeText(item?.storeKey) || "목록";
+    const number = Number(item?.index);
+    return `${label}${Number.isInteger(number) && number >= 0 ? ` · ${number + 1}번` : ""}`;
+  }
+
+  function removeDuplicateOccurrences(duplicates = []) {
+    const grouped = new Map();
+    (Array.isArray(duplicates) ? duplicates : []).forEach((item) => {
+      const key = String(item?.storeKey || item?.store?.key || "");
+      const index = Number(item?.index);
+      if (!key || !Number.isInteger(index) || index < 0) return;
+      if (!grouped.has(key)) grouped.set(key, new Set());
+      grouped.get(key).add(index);
+    });
+    grouped.forEach((indices, key) => {
+      const arr = cleanSongArray(readStorage(key));
+      writeStorage(key, arr.filter((_, index) => !indices.has(index)));
+    });
+    if (!isTagPage() && !isLyricsPage() && grouped.has(storeKey)) songs = cleanSongArray(readStorage(storeKey));
+    return grouped.size > 0;
+  }
+
+  function openDuplicateCompareDialog(duplicates = [], incoming = {}) {
+    return new Promise((resolve) => {
+      const list = Array.isArray(duplicates) ? duplicates : [];
+      if (!list.length) { resolve("both"); return; }
+      document.getElementById("duplicateCompareDialog")?.remove();
+      const overlay = document.createElement("div");
+      overlay.id = "duplicateCompareDialog";
+      overlay.className = "archive-duplicate-overlay duplicate-compare-overlay";
+      const incomingTitle = safeText(incoming?.title) || "새 영상";
+      const incomingAuthor = safeText(incoming?.author);
+      overlay.innerHTML = `
+        <div class="archive-duplicate-box duplicate-compare-box" role="dialog" aria-modal="true">
+          <h3>중복 영상을 찾았어</h3>
+          <p class="archive-duplicate-sub">기존 위치를 확인하고 어떻게 처리할지 골라줘.</p>
+          <div class="duplicate-compare-new">
+            <b>새로 넣는 영상</b>
+            <strong>${escapeHTML(incomingTitle)}</strong>
+            ${incomingAuthor ? `<span>${escapeHTML(incomingAuthor)}</span>` : ""}
+          </div>
+          <div class="duplicate-compare-list">
+            ${list.map((item) => `
+              <div class="duplicate-compare-item">
+                <div><strong>${escapeHTML(item?.song?.title || "제목 없음")}</strong><span>${escapeHTML(item?.song?.author || "")}</span></div>
+                <b>${escapeHTML(duplicateLocationLabel(item))}</b>
+              </div>
+            `).join("")}
+          </div>
+          <div class="archive-duplicate-actions duplicate-compare-actions">
+            <button type="button" class="archive-duplicate-btn no-btn" data-duplicate-choice="existing">기존 유지</button>
+            <button type="button" class="archive-duplicate-btn memo-btn" data-duplicate-choice="new">새 영상 유지</button>
+            <button type="button" class="archive-duplicate-btn add-btn" data-duplicate-choice="both">둘 다 유지</button>
+          </div>
+          <p class="duplicate-compare-help">새 영상 유지는 위에 표시된 기존 항목을 지우고 새 영상을 넣어. 둘 다 유지는 기존 항목을 그대로 둬.</p>
+        </div>`;
+      document.body.appendChild(overlay);
+      let finished = false;
+      const finish = (choice) => {
+        if (finished) return;
+        finished = true;
+        document.removeEventListener("keydown", onKey, true);
+        overlay.remove();
+        resolve(choice);
+      };
+      const onKey = (event) => { if (event.key === "Escape") finish("existing"); };
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) { finish("existing"); return; }
+        const btn = event.target.closest("[data-duplicate-choice]");
+        if (btn) finish(btn.getAttribute("data-duplicate-choice") || "existing");
+      });
+      document.addEventListener("keydown", onKey, true);
+    });
+  }
+
   function confirmDuplicateAdd(duplicates = []) {
     if (!Array.isArray(duplicates) || duplicates.length === 0) return true;
     if (typeof window.confirm !== "function") return true;
@@ -1520,23 +1699,36 @@ ${text}` : text;
     if (!targetStore) return { ok: false, error: "저장 위치를 찾지 못했어." };
     if (!cleanUrl || !id) return { ok: false, error: "유튜브 링크가 올바르지 않아." };
 
-    // 완전히 같은 영상은 어느 목록에 있든 확인창 없이 자동으로 건너뛴다.
+    const meta = await fetchYouTubeMeta(cleanUrl);
+    const incoming = { title: meta.title || "제목 없음", author: meta.author || "", ytUrl: cleanUrl, id };
+
     const exactDuplicates = collectExactVideoDuplicates({ ytUrl: cleanUrl, id });
     if (exactDuplicates.length > 0) {
-      return { ok: false, cancelled: true, duplicate: true, silent: true, duplicates: exactDuplicates, error: "이미 있는 영상이라 자동으로 건너뛰었어." };
+      const choice = typeof openDuplicateCompareDialog === "function"
+        ? await openDuplicateCompareDialog(exactDuplicates, incoming)
+        : (confirmExactVideoDuplicateAdd(exactDuplicates) ? "both" : "existing");
+      if (choice === "existing") {
+        return { ok: false, cancelled: true, duplicate: true, duplicates: exactDuplicates, error: "기존 영상을 유지했어." };
+      }
+      if (choice === "new") removeDuplicateOccurrences(exactDuplicates);
     }
 
-    const meta = await fetchYouTubeMeta(cleanUrl);
     const archivedRecord = findRemovedVideoRecord({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
     if (archivedRecord) {
       const allowArchived = await openArchivedDuplicateDialog(archivedRecord);
       if (!allowArchived) return { ok: false, cancelled: true, duplicate: true, archived: true, record: archivedRecord, error: "이전에 추가했던 영상이라 취소했어." };
     }
 
-    // 제목만 같은 다른 영상은 기존 확인 동작을 유지한다.
     const duplicates = collectDuplicateSongs({ ytUrl: cleanUrl, id, title: meta.title, storeKey: targetStore.key });
-    if (duplicates.length > 0 && !confirmDuplicateAdd(duplicates)) {
-      return { ok: false, cancelled: true, duplicate: true, duplicates, error: "중복 추가를 취소했어." };
+    const titleOnlyDuplicates = duplicates.filter((item) => !item.sameLink && item.sameTitle);
+    if (titleOnlyDuplicates.length > 0) {
+      const choice = typeof openDuplicateCompareDialog === "function"
+        ? await openDuplicateCompareDialog(titleOnlyDuplicates, incoming)
+        : (confirmDuplicateAdd(titleOnlyDuplicates) ? "both" : "existing");
+      if (choice === "existing") {
+        return { ok: false, cancelled: true, duplicate: true, duplicates: titleOnlyDuplicates, error: "기존 영상을 유지했어." };
+      }
+      if (choice === "new") removeDuplicateOccurrences(titleOnlyDuplicates);
     }
 
     const baseTags = archivedRecord ? addTags(archivedRecord.tags, tags) : tags;
@@ -1544,7 +1736,9 @@ ${text}` : text;
     const finalTags = applyTitleFixedTagsToTags(baseTags);
     ensureTagKinds(finalTags, "song");
     const arr = cleanSongArray(readStorage(targetStore.key));
+    const now = Date.now();
 
+    window.AppEnhancements?.beginMutation?.("영상 추가");
     arr.push(cleanSong({
       title: archivedRecord?.title || meta.title || "제목 없음",
       author: archivedRecord?.author || meta.author || "",
@@ -1552,12 +1746,14 @@ ${text}` : text;
       id,
       lyrics: archivedRecord ? String(archivedRecord.lyrics || "") : safeText(lyrics),
       mr: archivedRecord ? safeLink(archivedRecord.mr || "") : safeLink(mr),
-      score: "",
+      score: archivedRecord ? safeLink(archivedRecord.score || "") : "",
       original: archivedRecord ? safeLink(archivedRecord.original || "") : safeLink(original),
       memo: archivedRecord ? String(archivedRecord.memo || "") : "",
       tags: finalTags,
       favorite: !!archivedRecord?.favorite,
-      addedAt: Date.now(),
+      pinned: !!archivedRecord?.pinned,
+      createdAt: now,
+      addedAt: now,
       lastPlayedAt: 0,
       lastPosition: 0,
       lastDuration: 0,
@@ -1574,8 +1770,9 @@ ${text}` : text;
       songs = cleanSongArray(readStorage(targetStore.key));
       current = index;
     }
+    window.AppEnhancements?.commitMutation?.("영상 추가");
 
-    return { ok: true, storeKey: targetStore.key, store: targetStore, index, song: arr[index], updatedExisting: false, duplicateAllowed: exactDuplicates.length > 0 || duplicates.length > 0 || !!archivedRecord, archivedRecord };
+    return { ok: true, storeKey: targetStore.key, store: targetStore, index, song: arr[index], updatedExisting: false, duplicateAllowed: exactDuplicates.length > 0 || titleOnlyDuplicates.length > 0 || !!archivedRecord, archivedRecord };
   }
 
   function addPlaylistTagToExistingVideo(songRef = {}, tag = "") {
@@ -1683,6 +1880,8 @@ ${text}` : text;
     normalizeDuplicateTitle,
     collectDuplicateSongs,
     confirmDuplicateAdd,
+    openDuplicateCompareDialog,
+    removeDuplicateOccurrences,
     collectExactVideoDuplicates,
     confirmExactVideoDuplicateAdd,
     normalizeTag,
@@ -1740,6 +1939,7 @@ ${text}` : text;
     findRemovedVideoRecord,
     buildTagArchiveDescriptionBlock,
     archiveRemovedVideo,
+    restoreRemovedVideoRecord,
     formatArchiveDateText,
     renameTagEverywhere,
     openArchivedDuplicateDialog,
@@ -1967,6 +2167,7 @@ ${text}` : text;
   const DUPLICATE_PLAYLIST_LABEL = "겹친 재생목록";
   const DUPLICATE_SOURCE_OPTIONS = [
     { id: "jaSongs", label: "🇯🇵 일본", kind: "store", key: "jaSongs" },
+    { id: "cnSongs", label: "🇨🇳 중국", kind: "store", key: "cnSongs" },
     { id: "krSongs", label: "🇰🇷 한국", kind: "store", key: "krSongs" },
     { id: "enSongs", label: "🇺🇸 영어", kind: "store", key: "enSongs" },
     { id: "bgmSongs", label: "🎼 브금", kind: "store", key: "bgmSongs" },
@@ -2083,6 +2284,9 @@ ${text}` : text;
 
     base.tags = S.normalizeTags(songs.flatMap((song) => S.normalizeTags(song?.tags)));
     base.favorite = songs.some((song) => !!song?.favorite);
+    base.pinned = songs.some((song) => !!song?.pinned);
+    const createdTimes = songs.map((song) => Number(song?.createdAt || song?.addedAt || 0)).filter((n) => n > 0);
+    base.createdAt = createdTimes.length ? Math.min(...createdTimes) : Date.now();
     base.lastPlayedAt = Math.max(...songs.map((song) => Number(song?.lastPlayedAt || 0)));
 
     const recent = [...songs].sort((a, b) => Number(b?.lastPlayedAt || 0) - Number(a?.lastPlayedAt || 0))[0];
@@ -2274,7 +2478,7 @@ ${text}` : text;
   }
 
   function createBackupButtons() {
-    if (document.getElementById("backupTools") || document.body?.dataset?.page === "added") return;
+    if (document.getElementById("backupTools")) return;
     if (document.body?.dataset?.store || document.body?.dataset?.page === "tag") return; // 노래 재생 페이지/태그 재생 페이지에는 저장/불러오기 박스를 띄우지 않음
 
     const box = document.createElement("div");

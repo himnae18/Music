@@ -222,7 +222,7 @@
   let pageSearchQuery = "";
   const pageSortStorageKey = `musicPageSortMode:${S.storeKey || "combined"}`;
   let pageSortMode = localStorage.getItem(pageSortStorageKey) || "manual";
-  const VALID_SORT_MODES = new Set(["manual", "title", "author", "added", "recent", "favorite"]);
+  const VALID_SORT_MODES = new Set(["manual", "title", "author", "added", "recent", "favorite", "pinned"]);
   if (!VALID_SORT_MODES.has(pageSortMode)) pageSortMode = "manual";
   const pageFilters = {
     favorite: false,
@@ -258,6 +258,9 @@
   }
 
   function compareSongsByCurrentSort(a, b, aIndex = 0, bIndex = 0) {
+    const pinDiff = Number(!!b?.pinned) - Number(!!a?.pinned);
+    if (pinDiff) return pinDiff;
+    if (pageSortMode === "pinned") return aIndex - bIndex;
     if (pageSortMode === "title") return compareText(a?.title, b?.title) || compareText(a?.author, b?.author) || aIndex - bIndex;
     if (pageSortMode === "author") return compareText(a?.author, b?.author) || compareText(a?.title, b?.title) || aIndex - bIndex;
     if (pageSortMode === "added") return Number(b?.addedAt || 0) - Number(a?.addedAt || 0) || bIndex - aIndex;
@@ -267,7 +270,10 @@
   }
 
   function sortEntryList(entries) {
-    if (pageSortMode === "manual") return entries;
+    if (pageSortMode === "manual") {
+      if (!entries.some(({ song }) => !!song?.pinned)) return entries;
+      return [...entries].sort((a, b) => Number(!!b.song?.pinned) - Number(!!a.song?.pinned) || a.index - b.index);
+    }
     return [...entries].sort((a, b) => compareSongsByCurrentSort(a.song, b.song, a.index, b.index));
   }
 
@@ -290,7 +296,8 @@
       author: "채널/가수순",
       added: "최근 추가순",
       recent: "최근 재생순",
-      favorite: "즐겨찾기 우선"
+      favorite: "즐겨찾기 우선",
+      pinned: "고정 우선"
     }[pageSortMode] || "직접 정렬";
   }
 
@@ -402,6 +409,7 @@
             <option value="added">최근 추가순</option>
             <option value="recent">최근 재생순</option>
             <option value="favorite">즐겨찾기 우선</option>
+            <option value="pinned">📌 고정 우선</option>
           </select>
         </label>
         <button id="recentToggleBtn" class="library-tool-btn" type="button">🕘 최근 본 30개</button>
@@ -469,6 +477,16 @@
     else S.save?.();
     showList();
     renderRecentPlaybackPanel();
+  }
+
+  function togglePinAt(index) {
+    const song = S.songs?.[index];
+    if (!song) return;
+    window.AppEnhancements?.beginMutation?.(song.pinned ? "고정 해제" : "영상 고정");
+    song.pinned = !song.pinned;
+    S.save?.();
+    window.AppEnhancements?.commitMutation?.(song.pinned ? "영상 고정" : "고정 해제");
+    showList();
   }
 
   function tagChipHTML(tag, count = null, extraClass = "") {
@@ -2102,19 +2120,20 @@
       const statusLabel = hasMr ? "MR" : "없음";
       const sourceBadge = isCombinedLibraryPage() ? collectionBadgeText(s) : "";
       const favoriteButtonHTML = `<button class="pl-favorite-btn${s.favorite ? " is-favorite" : ""}" type="button" title="${s.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}" aria-label="${s.favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}" onclick="event.stopPropagation(); toggleFavoriteAt(${i});">${s.favorite ? "★" : "☆"}</button>`;
+      const pinButtonHTML = `<button class="pl-pin-btn${s.pinned ? " is-pinned" : ""}" type="button" title="${s.pinned ? "고정 해제" : "목록 맨 위에 고정"}" aria-label="${s.pinned ? "고정 해제" : "목록 맨 위에 고정"}" onclick="event.stopPropagation(); togglePinAt(${i});">${s.pinned ? "📌" : "📍"}</button>`;
       const promoteButtonHTML = options.isDuplicateChild
         ? `<button class="duplicate-promote-btn" type="button" title="이 영상을 대표 썸네일로 올리기" aria-label="이 영상을 대표 썸네일로 올리기" onclick="event.stopPropagation(); promoteDuplicateToMain(${i});">✓</button>`
         : "";
       const statusButtonHTML = isYoutubeCollectionPage()
-        ? `<button class="pl-mr-status pl-add-status" type="button" title="추가한 영상 페이지에 보관하고 태그 설명에 기록" onclick="event.stopPropagation(); archivePlaylistSong(${i});">추가</button>`
+        ? `<button class="pl-mr-status pl-add-status" type="button" title="현재 목록에서 빼서 보관함으로 이동" onclick="event.stopPropagation(); archivePlaylistSong(${i});">보관</button>`
         : `<button class="pl-mr-status ${statusClass}" type="button"
             title="${hasMr ? "MR 링크 있음 - 누르면 큰 유튜브 창에서 MR 재생" : "MR 링크 없음"}"
             onclick="event.stopPropagation(); playMr(${i});">
             ${statusLabel}
           </button>`;
       const actionTopHTML = promoteButtonHTML
-        ? `<div class="pl-action-top">${favoriteButtonHTML}${promoteButtonHTML}</div>`
-        : favoriteButtonHTML;
+        ? `<div class="pl-action-top">${favoriteButtonHTML}${pinButtonHTML}${promoteButtonHTML}</div>`
+        : `<div class="pl-action-top">${favoriteButtonHTML}${pinButtonHTML}</div>`;
       const actionButtonHTML = `<div class="pl-actions">${actionTopHTML}${statusButtonHTML}</div>`;
 
       const duplicateCount = Number(options.duplicateCount || 0);
@@ -2151,17 +2170,18 @@
         handleHTML = `<div class="pl-handle sort-locked-handle" title="직접 정렬에서 드래그할 수 있어"><span></span><span></span></div>`;
       }
 
-      const rowClass = `${options.isGroupMain && duplicateCount > 0 ? " duplicate-group-main" : ""}${options.isDuplicateChild ? " duplicate-child" : ""}`;
+      const rowClass = `${options.isGroupMain && duplicateCount > 0 ? " duplicate-group-main" : ""}${options.isDuplicateChild ? " duplicate-child" : ""}${s.pinned ? " is-pinned-row" : ""}`;
       const displayIndex = isSongCollectionPage() && pageSortMode === "manual" ? i + 1 : order + 1;
       const playing = i === S.current || (options.isGroupMain && groupHasCurrent && !options.expanded);
 
       return `
-        <div class="pl-item${active}${lyricsStatusClass}${rowClass}"
+        <div class="pl-item${active}${lyricsStatusClass}${rowClass}" data-song-index="${i}"
           ${dragAttributes}
           onclick="play(${i})"
           oncontextmenu="event.preventDefault(); event.stopPropagation(); openPlaylistItemManagerForMain(${i}); return false;">
 
           <div class="pl-left">
+            <label class="batch-select-wrap" title="여러 영상 선택" onclick="event.stopPropagation();"><input class="batch-select-checkbox" type="checkbox" data-batch-index="${i}" aria-label="${displayIndex}번 영상 선택"></label>
             <div class="pl-index">${displayIndex}</div>
             ${handleHTML}
             <div class="pl-playing">${playing ? "▶" : ""}</div>
@@ -2753,6 +2773,7 @@ ${actionButtonHTML}
     if (!isYoutubeCollectionPage()) return;
     const target = songs[index];
     if (!target) return;
+    window.AppEnhancements?.beginMutation?.("영상 보관");
     if (typeof S.archiveRemovedVideo === 'function') S.archiveRemovedVideo(target, { sourceStoreKey: S.storeKey, sourceIndex: index });
 
     const wasCurrent = index === current;
@@ -2760,6 +2781,7 @@ ${actionButtonHTML}
 
     if (songs.length === 0) {
       save();
+      window.AppEnhancements?.commitMutation?.("영상 보관");
       if (typeof ytPlayer !== 'undefined' && ytPlayer) ytPlayer.stopVideo();
       current = 0;
       showList();
@@ -2772,6 +2794,7 @@ ${actionButtonHTML}
     if (index < current) current--;
     if (current >= songs.length) current = songs.length - 1;
     save();
+    window.AppEnhancements?.commitMutation?.("영상 보관");
     showList();
     updateLyricsDrawer();
     updateControlLabels();
@@ -3828,6 +3851,7 @@ ${actionButtonHTML}
   window.moveCurrentSongToNumber = moveCurrentSongToNumber;
   window.showList = showList;
   window.toggleFavoriteAt = toggleFavoriteAt;
+  window.togglePinAt = togglePinAt;
   window.promoteDuplicateToMain = promoteDuplicateToMain;
   window.updateLyricsDrawer = updateLyricsDrawer;
   window.archivePlaylistSong = archivePlaylistSong;

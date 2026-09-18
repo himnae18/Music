@@ -221,6 +221,8 @@
           <a class="drawer-menu-link" href="${pre}youtube/4p.html" data-side-drop-store="yt4pVideos"><span>4P</span><span>›</span></a>
           <a class="drawer-menu-link" href="${pre}youtube/5p.html" data-side-drop-store="yt5pVideos"><span>5P</span><span>›</span></a>
           <a class="drawer-menu-link" href="${pre}youtube/6p.html" data-side-drop-store="yt6pVideos"><span>6P</span><span>›</span></a>
+          <a class="drawer-menu-link drawer-added-videos-link" href="${pre}added.html"><span>📥 추가된 영상</span><span>›</span></a>
+          <a class="drawer-menu-link drawer-recent-videos-link" href="${pre}recent.html"><span>🕘 최근 추가</span><span>›</span></a>
         </div>
       </div>
 
@@ -249,7 +251,6 @@
 
       <div class="drawer-divider"></div>
 
-      <a class="drawer-menu-link" href="${pre}added.html"><span>📁 추가한 영상</span><span>›</span></a>
       <a class="drawer-tag-link" href="${pre}tag.html">태그</a>
       <a class="drawer-lyrics-link" href="${pre}lyrics.html">가사</a>
     `;

@@ -12,35 +12,48 @@ async function addSong() {
     return;
   }
 
-  // 완전히 같은 영상 ID가 이미 있으면 확인창 없이 조용히 건너뛴다.
-  const exactDuplicateMatches = window.AppState?.collectExactVideoDuplicates?.({ ytUrl, id }) || [];
-  if (exactDuplicateMatches.length > 0) return;
-
+  const S = window.AppState;
   const meta = await fetchYouTubeMeta(ytUrl);
-  const archivedRecord = typeof window.AppState?.findRemovedVideoRecord === "function"
-    ? window.AppState.findRemovedVideoRecord({ ytUrl, id, title: meta.title, storeKey: window.AppState?.storeKey || "" })
+  const incoming = { title: meta.title || "제목 없음", author: meta.author || "", ytUrl, id };
+
+  // 같은 영상 ID/링크가 이미 있어도 이제 위치를 보여주고 직접 처리 방식을 고를 수 있다.
+  const exactDuplicateMatches = S?.collectExactVideoDuplicates?.({ ytUrl, id }) || [];
+  if (exactDuplicateMatches.length > 0) {
+    const choice = typeof S?.openDuplicateCompareDialog === "function"
+      ? await S.openDuplicateCompareDialog(exactDuplicateMatches, incoming)
+      : (confirm("이미 같은 영상이 있어. 그래도 추가할까?") ? "both" : "existing");
+    if (choice === "existing") return;
+    if (choice === "new") S?.removeDuplicateOccurrences?.(exactDuplicateMatches);
+  }
+
+  const archivedRecord = typeof S?.findRemovedVideoRecord === "function"
+    ? S.findRemovedVideoRecord({ ytUrl, id, title: meta.title, storeKey: S?.storeKey || "" })
     : null;
   if (archivedRecord) {
-    const allowArchived = typeof window.AppState?.openArchivedDuplicateDialog === "function"
-      ? await window.AppState.openArchivedDuplicateDialog(archivedRecord)
+    const allowArchived = typeof S?.openArchivedDuplicateDialog === "function"
+      ? await S.openArchivedDuplicateDialog(archivedRecord)
       : true;
     if (!allowArchived) return;
   }
 
-  // 제목만 같은 다른 영상은 기존 동작을 유지한다.
-  const duplicateMatches = window.AppState?.collectDuplicateSongs?.({
+  // 영상 ID는 다르지만 제목이 같은 경우도 상세 비교창에서 처리한다.
+  const duplicateMatches = S?.collectDuplicateSongs?.({
     ytUrl,
     id,
     title: meta.title,
-    storeKey: window.AppState?.storeKey || ""
+    storeKey: S?.storeKey || ""
   }) || [];
-  if (duplicateMatches.length > 0) {
-    const canAddDuplicate = typeof window.AppState?.confirmDuplicateAdd === "function"
-      ? window.AppState.confirmDuplicateAdd(duplicateMatches)
-      : true;
-    if (!canAddDuplicate) return;
+  const titleOnlyDuplicates = duplicateMatches.filter((item) => !item.sameLink && item.sameTitle);
+  if (titleOnlyDuplicates.length > 0) {
+    const choice = typeof S?.openDuplicateCompareDialog === "function"
+      ? await S.openDuplicateCompareDialog(titleOnlyDuplicates, incoming)
+      : (S?.confirmDuplicateAdd?.(titleOnlyDuplicates) ? "both" : "existing");
+    if (choice === "existing") return;
+    if (choice === "new") S?.removeDuplicateOccurrences?.(titleOnlyDuplicates);
   }
 
+  window.AppEnhancements?.beginMutation?.("영상 추가");
+  const now = Date.now();
   songs.push({
     title: archivedRecord?.title || meta.title,
     author: archivedRecord?.author || meta.author,
@@ -48,12 +61,14 @@ async function addSong() {
     id,
     lyrics: archivedRecord ? String(archivedRecord.lyrics || "") : lyrics,
     mr: archivedRecord ? safeLink(archivedRecord.mr || "") : mr,
-    score,
+    score: archivedRecord ? safeLink(archivedRecord.score || "") : score,
     original: archivedRecord ? safeLink(archivedRecord.original || "") : original,
     memo: archivedRecord ? String(archivedRecord.memo || "") : "",
     tags: archivedRecord?.tags || [],
     favorite: !!archivedRecord?.favorite,
-    addedAt: Date.now(),
+    pinned: !!archivedRecord?.pinned,
+    createdAt: now,
+    addedAt: now,
     lastPlayedAt: 0,
     lastPosition: 0,
     lastDuration: 0,
@@ -64,6 +79,7 @@ async function addSong() {
 
   current = songs.length - 1;
   save();
+  window.AppEnhancements?.commitMutation?.("영상 추가");
   showList();
 
   ["yt", "lyrics", "mr", "score", "original"].forEach((id) => {
@@ -82,11 +98,13 @@ function deleteSong(index) {
   if (window.AppState?.isPlaylistPage?.()) {
     if (!confirm("이 재생목록에서 이 영상만 삭제할까?\n원래 일본곡에는 영향이 없어.")) return;
 
+    window.AppEnhancements?.beginMutation?.("재생목록에서 삭제");
     const wasCurrent = index === current;
     songs.splice(index, 1);
     if (index < current) current--;
     if (current >= songs.length) current = Math.max(0, songs.length - 1);
     window.AppState.save?.();
+    window.AppEnhancements?.commitMutation?.("재생목록에서 삭제");
 
     if (songs.length === 0) {
       try { ytPlayer?.stopVideo?.(); } catch {}
@@ -112,9 +130,11 @@ function deleteSong(index) {
     if (!confirm(`이 영상에서 #${tag} 태그만 제거할까?
 원래 페이지의 영상은 삭제되지 않아.`)) return;
 
+    window.AppEnhancements?.beginMutation?.("태그 제거");
     const song = songs[index];
     song.tags = normalizeTags(song.tags).filter((item) => item !== tag);
     window.AppState.saveSongToSource?.(song);
+    window.AppEnhancements?.commitMutation?.("태그 제거");
 
     const wasCurrentTag = index === current;
     songs.splice(index, 1);
@@ -140,11 +160,13 @@ function deleteSong(index) {
 
   if (!confirm("이 노래를 삭제할까?")) return;
 
+  window.AppEnhancements?.beginMutation?.("영상 삭제");
   const wasCurrent = index === current;
   songs.splice(index, 1);
 
   if (songs.length === 0) {
     save();
+    window.AppEnhancements?.commitMutation?.("영상 삭제");
     if (ytPlayer) ytPlayer.stopVideo();
     current = 0;
     showList();
@@ -158,6 +180,7 @@ function deleteSong(index) {
   if (current >= songs.length) current = songs.length - 1;
 
   save();
+  window.AppEnhancements?.commitMutation?.("영상 삭제");
   showList();
   updateLyricsDrawer();
 
@@ -1302,3 +1325,5 @@ window.goForwardSong = goForwardSong;
 window.changePlayerPlaybackRate = changePlayerPlaybackRate;
 window.resetPlayerPlaybackRate = resetPlayerPlaybackRate;
 window.togglePlayerPlayPause = togglePlayerPlayPause;
+
+try { window.ensurePlayerReady = ensurePlayerReady; } catch {}

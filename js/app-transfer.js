@@ -2,12 +2,16 @@
 (() => {
   const TARGETS = [
     { key: "jaSongs", label: "일본" },
+    { key: "cnSongs", label: "중국" },
     { key: "krSongs", label: "한국" },
     { key: "enSongs", label: "영어" },
+    { key: "bgmSongs", label: "브금" },
     { key: "yt1pVideos", label: "1P" },
     { key: "yt2pVideos", label: "2P" },
     { key: "yt3pVideos", label: "3P" },
-    { key: "yt4pVideos", label: "4P" }
+    { key: "yt4pVideos", label: "4P" },
+    { key: "yt5pVideos", label: "5P" },
+    { key: "yt6pVideos", label: "6P" }
   ];
 
   function S() {
@@ -223,6 +227,7 @@
       return false;
     }
 
+    window.AppEnhancements?.beginMutation?.(`${target.label}로 이동`);
     const view = state.songs || [];
     const sourceIndexInView = findSongIndex(view, song, options.sourceIndex);
     const previousCurrentSong = view[state.current] || null;
@@ -274,6 +279,7 @@
       added.duplicate ? "same" : "ok"
     );
 
+    window.AppEnhancements?.commitMutation?.(`${target.label}로 이동`);
     window.showMoveUndoToast?.(() => {
       try {
         state.writeStorage(targetKey, targetSnapshot);

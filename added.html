@@ -1,16 +1,79 @@
 <!DOCTYPE html>
 <html lang="ko">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>추가한 영상</title><link rel="stylesheet" href="style.css?v=20260918archive"><link rel="stylesheet" href="added.css"></head>
-<body data-page="added">
-<button id="hamburgerBtn" class="hamburger" type="button">☰</button><div id="drawerOverlay" class="drawer-overlay"></div><nav id="drawer" class="drawer" aria-label="메뉴"></nav>
-<main id="mainContent" class="archive-page">
-<h1>📁 추가한 영상</h1><p>1~6P에서 빨간 ‘추가’ 버튼을 누른 영상들이 여기에 모여. 이전에 추가한 기록도 함께 볼 수 있어.</p>
-<section class="archive-filters" aria-label="영상 검색과 정렬">
-<label>검색<input id="archiveSearch" type="search" placeholder="제목 · 채널 · 태그 · 설명"></label>
-<label>원래 페이지<select id="archiveSource"><option value="">전체 페이지</option></select></label>
-<label>태그<select id="archiveTag"><option value="">전체 태그</option><option value="__none">태그 없음</option></select></label>
-<label>정렬<select id="archiveSort"><option value="new">최근 추가순</option><option value="old">오래된 순</option><option value="title">제목순</option><option value="author">채널순</option></select></label>
-<button id="archiveReset" type="button">초기화</button></section>
-<p id="archiveCount" role="status"></p><div id="archiveList" class="archive-grid"></div>
-<nav class="archive-pagination" aria-label="목록 페이지"><button id="archivePrev" type="button">이전</button><span id="archivePageNumber"></span><button id="archiveNext" type="button">다음</button></nav>
-</main><script src="js/app-state.js?v=20260918archive"></script><script src="nav.js?v=20260918archive"></script><script src="js/app-added.js?v=20260918archive"></script></body></html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>추가된 영상</title>
+  <link rel="stylesheet" href="style.css?v=20260918added1" />
+</head>
+<body class="added-videos-page">
+<button id="hamburgerBtn" class="hamburger" type="button">☰</button>
+<div id="drawerOverlay" class="drawer-overlay"></div>
+<nav id="drawer" class="drawer" aria-label="메뉴"></nav>
+
+<div class="added-page-shell">
+  <header class="added-page-header">
+    <div>
+      <h1>📥 추가된 영상</h1>
+      <p>각 유튜브 페이지에서 <b>보관</b>을 누른 영상만 모아 보여줘. 원래 위치로 다시 복원할 수도 있어.</p>
+    </div>
+    <a class="added-home-btn" href="index.html">메인으로</a>
+  </header>
+
+  <section class="added-toolbar" aria-label="추가된 영상 검색과 정렬">
+    <div class="added-search-wrap">
+      <span class="added-search-icon" aria-hidden="true">⌕</span>
+      <input id="addedVideoSearch" type="search" placeholder="제목 / 채널 / 태그 / 메모 검색" autocomplete="off" />
+      <button id="addedSearchClear" type="button" title="검색어 지우기">✕</button>
+    </div>
+    <select id="addedSort" aria-label="정렬">
+      <option value="oldest">넣은 순서대로</option>
+      <option value="newest">최근 추가순</option>
+    </select>
+    <div id="addedVideoCount" class="added-count">0개</div>
+  </section>
+
+  <main class="added-content-layout">
+    <section class="added-list-panel" aria-label="추가된 영상 목록">
+      <div id="addedVideoList" class="added-video-list"></div>
+    </section>
+
+    <aside class="added-player-panel" aria-label="선택한 영상 재생">
+      <div id="addedPlayerEmpty" class="added-player-empty">
+        <div class="added-player-empty-icon">▶</div>
+        <strong>왼쪽에서 영상을 선택해줘.</strong>
+        <span>선택한 영상이 여기에서 재생돼.</span>
+      </div>
+      <div id="addedPlayerBox" class="added-player-box" hidden>
+        <div class="added-player-frame-wrap">
+          <iframe id="addedPlayerFrame" title="유튜브 영상 재생" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+        </div>
+        <div class="added-player-info">
+          <strong id="addedPlayerTitle"></strong>
+          <span id="addedPlayerSub"></span>
+          <div id="addedPlayerTags" class="added-player-tags"></div>
+          <div class="added-restore-actions">
+            <button id="addedRestoreOriginal" type="button">↩ 원래 위치로 복원</button>
+            <select id="addedRestoreTarget" aria-label="복원할 페이지">
+              <option value="yt1pVideos">1P</option>
+              <option value="yt2pVideos">2P</option>
+              <option value="yt3pVideos">3P</option>
+              <option value="yt4pVideos">4P</option>
+              <option value="yt5pVideos">5P</option>
+              <option value="yt6pVideos">6P</option>
+            </select>
+            <button id="addedRestoreChosen" type="button">선택 위치로 복원</button>
+          </div>
+          <a id="addedOpenYoutube" class="added-open-youtube" href="#" target="_blank" rel="noopener noreferrer">유튜브에서 열기</a>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="js/app-state.js?v=20260918added1"></script>
+<script src="nav.js?v=20260918added1"></script>
+<script src="js/added-videos.js?v=20260918added1"></script>
+<script src="js/app-enhancements.js?v=20260918enhance1"></script>
+</body>
+</html>

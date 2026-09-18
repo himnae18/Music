@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>최근 추가한 영상</title>
+  <link rel="stylesheet" href="style.css?v=20260918enhance1" />
+</head>
+<body class="recent-added-page">
+<button id="hamburgerBtn" class="hamburger" type="button">☰</button>
+<div id="drawerOverlay" class="drawer-overlay"></div>
+<nav id="drawer" class="drawer" aria-label="메뉴"></nav>
+
+<div class="recent-page-shell">
+  <header class="recent-page-header">
+    <div>
+      <h1>🕘 최근 추가한 영상</h1>
+      <p>사이트에 처음 등록된 시점을 기준으로 모아 보여줘. 페이지를 옮기거나 복사해도 최초 등록일은 유지돼.</p>
+    </div>
+    <a class="added-home-btn" href="index.html">메인으로</a>
+  </header>
+
+  <section class="recent-toolbar" aria-label="최근 추가 영상 검색과 필터">
+    <input id="recentAddSearch" type="search" placeholder="제목 / 채널 / #태그 / 페이지:1P / 채널:이름" autocomplete="off" />
+    <select id="recentAddPeriod" aria-label="기간">
+      <option value="all">전체 기간</option>
+      <option value="today">오늘</option>
+      <option value="7">최근 7일</option>
+      <option value="30">최근 30일</option>
+    </select>
+    <select id="recentAddSort" aria-label="정렬">
+      <option value="newest">최근 등록순</option>
+      <option value="oldest">오래된 등록순</option>
+    </select>
+    <span id="recentAddCount">0개</span>
+  </section>
+
+  <main id="recentAddList" class="recent-add-list"></main>
+</div>
+
+<script src="js/app-state.js?v=20260918enhance1"></script>
+<script src="nav.js?v=20260918enhance1"></script>
+<script src="js/recent-added.js?v=20260918enhance1"></script>
+<script src="js/app-enhancements.js?v=20260918enhance1"></script>
+</body>
+</html>
