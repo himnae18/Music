@@ -10,12 +10,46 @@
     } catch { return ''; }
   }
   window.parseYouTubePlaylistID = playlistID;
-  const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  // Playlist import must also work before any normal video has been played.
+  let apiPromise = null;
+  function ensurePlaylistAPI() {
+    if (typeof window.YT?.Player === 'function') return Promise.resolve();
+    if (apiPromise) return apiPromise;
+    apiPromise = new Promise((resolve, reject) => {
+      let script = document.getElementById('yt-iframe-api');
+      let timer, poll, settled = false;
+      const finish = error => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer); clearInterval(poll);
+        script?.removeEventListener('error', onError);
+        if (error) {
+          // A failed script must not prevent the next click from retrying.
+          script?.remove();
+          reject(error);
+        } else resolve();
+      };
+      const onError = () => finish(new Error('유튜브 연결 코드를 불러오지 못했어. 연결 상태나 광고 차단 확장 프로그램을 확인한 뒤 다시 추가해 줘.'));
+      const check = () => {
+        if (typeof window.YT?.Player === 'function') finish();
+      };
+      // Polling preserves the normal player's existing API-ready callback.
+      poll = setInterval(check, 100);
+      timer = setTimeout(() => finish(new Error('유튜브 연결이 지연되고 있어. 잠시 후 추가 버튼을 다시 눌러 줘.')), 20000);
+      if (!script) {
+        script = document.createElement('script');
+        script.id = 'yt-iframe-api';
+        script.src = 'https://www.youtube.com/iframe_api';
+        script.async = true;
+        script.addEventListener('error', onError);
+        document.head.appendChild(script);
+      } else script.addEventListener('error', onError);
+      check();
+    }).finally(() => { apiPromise = null; });
+    return apiPromise;
+  }
   async function readPlaylist(id, host) {
-    for (let i = 0; !window.YT?.Player; i++) {
-      if (i >= 60) throw new Error('유튜브에 연결하지 못했어. 인터넷 연결을 확인하고 다시 시도해 줘.');
-      await delay(250);
-    }
+    await ensurePlaylistAPI();
     return new Promise((resolve, reject) => {
       let player, poll, done = false, previous = '', stable = 0;
       const finish = (error, ids) => {
@@ -28,6 +62,7 @@
       };
       const timeout = setTimeout(() => finish(new Error('재생목록을 읽지 못했어. 공개 여부와 링크를 확인해 줘. 유튜브에서 불러올 수 없는 목록은 추가되지 않아.')), 25000);
       const slot = document.createElement('div'); host.append(slot);
+      try {
       player = new YT.Player(slot, {
         width: '100%', height: '220',
         playerVars: { autoplay: 0, playsinline: 1 },
@@ -46,6 +81,7 @@
           onError: () => {}
         }
       });
+      } catch (error) { finish(error); }
     });
   }
   let importing = false;

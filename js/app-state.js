@@ -2274,7 +2274,7 @@ ${text}` : text;
   }
 
   function createBackupButtons() {
-    if (document.getElementById("backupTools")) return;
+    if (document.getElementById("backupTools") || document.body?.dataset?.page === "added") return;
     if (document.body?.dataset?.store || document.body?.dataset?.page === "tag") return; // 노래 재생 페이지/태그 재생 페이지에는 저장/불러오기 박스를 띄우지 않음
 
     const box = document.createElement("div");

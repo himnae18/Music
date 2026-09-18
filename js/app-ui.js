@@ -2106,7 +2106,7 @@
         ? `<button class="duplicate-promote-btn" type="button" title="이 영상을 대표 썸네일로 올리기" aria-label="이 영상을 대표 썸네일로 올리기" onclick="event.stopPropagation(); promoteDuplicateToMain(${i});">✓</button>`
         : "";
       const statusButtonHTML = isYoutubeCollectionPage()
-        ? `<button class="pl-mr-status pl-add-status" type="button" title="현재 목록에서 숨기고 태그 설명에 기록" onclick="event.stopPropagation(); archivePlaylistSong(${i});">추가</button>`
+        ? `<button class="pl-mr-status pl-add-status" type="button" title="추가한 영상 페이지에 보관하고 태그 설명에 기록" onclick="event.stopPropagation(); archivePlaylistSong(${i});">추가</button>`
         : `<button class="pl-mr-status ${statusClass}" type="button"
             title="${hasMr ? "MR 링크 있음 - 누르면 큰 유튜브 창에서 MR 재생" : "MR 링크 없음"}"
             onclick="event.stopPropagation(); playMr(${i});">

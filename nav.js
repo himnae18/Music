@@ -249,6 +249,7 @@
 
       <div class="drawer-divider"></div>
 
+      <a class="drawer-menu-link" href="${pre}added.html"><span>📁 추가한 영상</span><span>›</span></a>
       <a class="drawer-tag-link" href="${pre}tag.html">태그</a>
       <a class="drawer-lyrics-link" href="${pre}lyrics.html">가사</a>
     `;

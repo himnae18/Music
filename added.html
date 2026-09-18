@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>추가한 영상</title><link rel="stylesheet" href="style.css?v=20260918archive"><link rel="stylesheet" href="added.css"></head>
+<body data-page="added">
+<button id="hamburgerBtn" class="hamburger" type="button">☰</button><div id="drawerOverlay" class="drawer-overlay"></div><nav id="drawer" class="drawer" aria-label="메뉴"></nav>
+<main id="mainContent" class="archive-page">
+<h1>📁 추가한 영상</h1><p>1~6P에서 빨간 ‘추가’ 버튼을 누른 영상들이 여기에 모여. 이전에 추가한 기록도 함께 볼 수 있어.</p>
+<section class="archive-filters" aria-label="영상 검색과 정렬">
+<label>검색<input id="archiveSearch" type="search" placeholder="제목 · 채널 · 태그 · 설명"></label>
+<label>원래 페이지<select id="archiveSource"><option value="">전체 페이지</option></select></label>
+<label>태그<select id="archiveTag"><option value="">전체 태그</option><option value="__none">태그 없음</option></select></label>
+<label>정렬<select id="archiveSort"><option value="new">최근 추가순</option><option value="old">오래된 순</option><option value="title">제목순</option><option value="author">채널순</option></select></label>
+<button id="archiveReset" type="button">초기화</button></section>
+<p id="archiveCount" role="status"></p><div id="archiveList" class="archive-grid"></div>
+<nav class="archive-pagination" aria-label="목록 페이지"><button id="archivePrev" type="button">이전</button><span id="archivePageNumber"></span><button id="archiveNext" type="button">다음</button></nav>
+</main><script src="js/app-state.js?v=20260918archive"></script><script src="nav.js?v=20260918archive"></script><script src="js/app-added.js?v=20260918archive"></script></body></html>
